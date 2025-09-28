@@ -4,7 +4,13 @@ prepare for npm publishing. implement eslint and tsup.
 
 ===
 
-add more comprehensive test cases and coverage
+add more comprehensive test cases and coverage. also add more complex fixtures domain and files
+
+=== DONE
+
+all parts executed. now
+
+I want each cases should be isolated and on every run no any left over remain, even dirs... should be clean of temps
 
 === DONE
 

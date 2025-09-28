@@ -16,9 +16,7 @@ type ExtractPathsTestCase = {
 
 describe('core.ts', () => {
   describe('extractPaths', async () => {
-    const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>(
-      './core.fixtures.yaml',
-    );
+    const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
 
     for (const { name, options, input, expected } of fixtures) {
       it(name, () => {

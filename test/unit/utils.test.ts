@@ -24,9 +24,7 @@ describe('createFormatter', async () => {
     );
   });
 
-  const fixtures = await loadYamlFixture<FormatterFixture>(
-    './utils.fixtures.yaml',
-  );
+  const fixtures = await loadYamlFixture<FormatterFixture>('unit/utils.fixtures.yaml');
 
   for (const fixture of fixtures) {
     if ('cases' in fixture) {

@@ -20,7 +20,7 @@ type CliTestCase = {
 };
 
 describe('cli.ts (E2E)', async () => {
-  const fixtures = await loadYamlFixture<CliTestCase[]>('./cli.fixtures.yaml');
+  const fixtures = await loadYamlFixture<CliTestCase[]>('e2e/cli.fixtures.yaml');
 
   describe('CLI execution', () => {
     let tempDir: string;

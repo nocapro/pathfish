@@ -26,6 +26,133 @@ tsconfig.json
 
 # Files
 
+## File: src/engine.ts
+````typescript
+import { extractPaths, verifyPaths, type Options } from './core';
+import { createFormatter, type Format } from './utils';
+
+/**
+ * Combined options for the entire path processing pipeline.
+ */
+export type PipelineOptions = Options & {
+  /**
+   * Filter out paths that do not exist on disk.
+   * @default false
+   */
+  verify?: boolean;
+  /**
+   * The output format.
+   * @default 'json'
+   */
+  format?: Format;
+  /**
+   * Pretty-print JSON output.
+   * @default true
+   */
+  pretty?: boolean;
+};
+
+/**
+ * Executes the full path extraction and formatting pipeline.
+ * This is the core engine of pathfish, decoupled from the CLI.
+ * @param text The input text to process.
+ * @param options Configuration for the pipeline.
+ * @returns A promise that resolves to the formatted string output.
+ */
+export async function runPipeline(
+  text: string,
+  options: PipelineOptions = {},
+): Promise<string> {
+  const {
+    verify: shouldVerify = false,
+    format: formatType = 'json',
+    pretty = true,
+    ...extractOptions
+  } = options;
+
+  // 1. Extract paths from the text using the core extractor.
+  const initialPaths = extractPaths(text, { unique: true, ...extractOptions });
+
+  // 2. (Optional) Verify that the paths actually exist on disk.
+  const verifiedPaths = shouldVerify
+    ? await verifyPaths(initialPaths)
+    : initialPaths;
+
+  // 3. Format the resulting paths into the desired output string.
+  const format = createFormatter(formatType, pretty);
+  const formattedOutput = format(verifiedPaths);
+
+  return formattedOutput;
+}
+````
+
+## File: src/index.ts
+````typescript
+// Re-export core functions and types for programmatic use.
+export { extractPaths, verifyPaths, type Options } from './core';
+
+// Import the low-level clipboard utility.
+import { copyToClipboard } from './utils';
+
+/**
+ * Asynchronously copies an array of paths to the system clipboard,
+ * formatting them as a newline-separated list.
+ * It gracefully handles errors in environments without a clipboard (e.g., CI).
+ * @param paths The array of path strings to copy.
+ * @returns A promise that resolves when the operation is complete.
+ */
+export async function copyPathsToClipboard(paths: string[]): Promise<void> {
+  const textToCopy = paths.join('\n');
+  await copyToClipboard(textToCopy);
+}
+````
+
+## File: src/utils.ts
+````typescript
+import yaml from 'js-yaml';
+import clipboardy from 'clipboardy';
+
+export type Format = 'json' | 'yaml' | 'list';
+
+/**
+ * A higher-order function that returns a formatting function based on the desired format.
+ * This keeps the formatting logic separate and easy to test.
+ * @param format The output format.
+ * @param pretty Whether to pretty-print (for JSON).
+ * @returns A function that takes an array of strings and returns a formatted string.
+ */
+export const createFormatter = (format: Format, pretty: boolean) => {
+  return (paths: string[]): string => {
+    switch (format) {
+      case 'json':
+        return JSON.stringify(paths, null, pretty ? 2 : undefined);
+      case 'yaml':
+        return yaml.dump(paths);
+      case 'list':
+        return paths.join('\n');
+      default:
+        // This case should be unreachable if argument parsing is correct.
+        throw new Error(`Unknown format: ${format}`);
+    }
+  };
+};
+
+/**
+ * Asynchronously copies a given string to the system clipboard.
+ * It gracefully handles errors in environments without a clipboard (e.g., CI).
+ * @param text The text to copy.
+ * @returns A promise that resolves when the operation is complete.
+ */
+export async function copyToClipboard(text: string): Promise<void> {
+  try {
+    await clipboardy.write(text);
+  } catch (error) {
+    // Suppress errors in environments without a clipboard. Copying is a
+    // "nice-to-have" side effect, not a critical function.
+  }
+}
+````
+
 ## File: test/e2e/cli.fixtures.yaml
 ````yaml
 - name: "should show help text with --help"
@@ -140,8 +267,8 @@ type CliTestCase = {
   exit_code?: number;
 };
 
-describe('cli.ts (E2E)', () => {
-  const fixtures = await loadYamlFixture<CliTestCase[]>('./cli.fixtures.yaml');
+describe('cli.ts (E2E)', async () => {
+  const fixtures = await loadYamlFixture<CliTestCase[]>('e2e/cli.fixtures.yaml');
 
   describe('CLI execution', () => {
     let tempDir: string;
@@ -282,10 +409,8 @@ type EngineTestCase = {
   expected: string;
 };
 
-describe('engine.ts (Integration)', () => {
-  const fixtures = await loadYamlFixture<EngineTestCase[]>(
-    './engine.fixtures.yaml',
-  );
+describe('engine.ts (Integration)', async () => {
+  const fixtures = await loadYamlFixture<EngineTestCase[]>('integration/engine.fixtures.yaml');
 
   describe('runPipeline', () => {
     let tempDir: string;
@@ -403,10 +528,8 @@ type ExtractPathsTestCase = {
 };
 
 describe('core.ts', () => {
-  describe('extractPaths', () => {
-    const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>(
-      './core.fixtures.yaml',
-    );
+  describe('extractPaths', async () => {
+    const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
 
     for (const { name, options, input, expected } of fixtures) {
       it(name, () => {
@@ -536,7 +659,7 @@ type FormatterFixture = (
   | { name: string; cases: FormatterTestCase[] }
 )[];
 
-describe('createFormatter', () => {
+describe('createFormatter', async () => {
   it('should throw an error for an unknown format', () => {
     // This is a type-level check, but we test the runtime guard
     const badFormat = 'xml' as any;
@@ -545,9 +668,7 @@ describe('createFormatter', () => {
     );
   });
 
-  const fixtures = await loadYamlFixture<FormatterFixture>(
-    './utils.fixtures.yaml',
-  );
+  const fixtures = await loadYamlFixture<FormatterFixture>('unit/utils.fixtures.yaml');
 
   for (const fixture of fixtures) {
     if ('cases' in fixture) {
@@ -636,133 +757,6 @@ export async function runCli(
   const exitCode = await proc.exited;
 
   return { stdout, stderr, exitCode };
-}
-````
-
-## File: src/engine.ts
-````typescript
-import { extractPaths, verifyPaths, type Options } from './core';
-import { createFormatter, type Format } from './utils';
-
-/**
- * Combined options for the entire path processing pipeline.
- */
-export type PipelineOptions = Options & {
-  /**
-   * Filter out paths that do not exist on disk.
-   * @default false
-   */
-  verify?: boolean;
-  /**
-   * The output format.
-   * @default 'json'
-   */
-  format?: Format;
-  /**
-   * Pretty-print JSON output.
-   * @default true
-   */
-  pretty?: boolean;
-};
-
-/**
- * Executes the full path extraction and formatting pipeline.
- * This is the core engine of pathfish, decoupled from the CLI.
- * @param text The input text to process.
- * @param options Configuration for the pipeline.
- * @returns A promise that resolves to the formatted string output.
- */
-export async function runPipeline(
-  text: string,
-  options: PipelineOptions = {},
-): Promise<string> {
-  const {
-    verify: shouldVerify = false,
-    format: formatType = 'json',
-    pretty = true,
-    ...extractOptions
-  } = options;
-
-  // 1. Extract paths from the text using the core extractor.
-  const initialPaths = extractPaths(text, { unique: true, ...extractOptions });
-
-  // 2. (Optional) Verify that the paths actually exist on disk.
-  const verifiedPaths = shouldVerify
-    ? await verifyPaths(initialPaths)
-    : initialPaths;
-
-  // 3. Format the resulting paths into the desired output string.
-  const format = createFormatter(formatType, pretty);
-  const formattedOutput = format(verifiedPaths);
-
-  return formattedOutput;
-}
-````
-
-## File: src/index.ts
-````typescript
-// Re-export core functions and types for programmatic use.
-export { extractPaths, verifyPaths, type Options } from './core';
-
-// Import the low-level clipboard utility.
-import { copyToClipboard } from './utils';
-
-/**
- * Asynchronously copies an array of paths to the system clipboard,
- * formatting them as a newline-separated list.
- * It gracefully handles errors in environments without a clipboard (e.g., CI).
- * @param paths The array of path strings to copy.
- * @returns A promise that resolves when the operation is complete.
- */
-export async function copyPathsToClipboard(paths: string[]): Promise<void> {
-  const textToCopy = paths.join('\n');
-  await copyToClipboard(textToCopy);
-}
-````
-
-## File: src/utils.ts
-````typescript
-import yaml from 'js-yaml';
-import clipboardy from 'clipboardy';
-
-export type Format = 'json' | 'yaml' | 'list';
-
-/**
- * A higher-order function that returns a formatting function based on the desired format.
- * This keeps the formatting logic separate and easy to test.
- * @param format The output format.
- * @param pretty Whether to pretty-print (for JSON).
- * @returns A function that takes an array of strings and returns a formatted string.
- */
-export const createFormatter = (format: Format, pretty: boolean) => {
-  return (paths: string[]): string => {
-    switch (format) {
-      case 'json':
-        return JSON.stringify(paths, null, pretty ? 2 : undefined);
-      case 'yaml':
-        return yaml.dump(paths);
-      case 'list':
-        return paths.join('\n');
-      default:
-        // This case should be unreachable if argument parsing is correct.
-        throw new Error(`Unknown format: ${format}`);
-    }
-  };
-};
-
-/**
- * Asynchronously copies a given string to the system clipboard.
- * It gracefully handles errors in environments without a clipboard (e.g., CI).
- * @param text The text to copy.
- * @returns A promise that resolves when the operation is complete.
- */
-export async function copyToClipboard(text: string): Promise<void> {
-  try {
-    await clipboardy.write(text);
-  } catch (error) {
-    // Suppress errors in environments without a clipboard. Copying is a
-    // "nice-to-have" side effect, not a critical function.
-  }
 }
 ````
 
@@ -954,39 +948,6 @@ export async function verifyPaths(paths: string[]): Promise<string[]> {
 }
 ````
 
-## File: package.json
-````json
-{
-  "name": "pathfish",
-  "version": "0.1.0",
-  "module": "src/index.ts",
-  "type": "module",
-  "private": true,
-  "bin": {
-    "pathfish": "src/cli.ts"
-  },
-  "files": [
-    "src"
-  ],
-  "dependencies": {
-    "clipboardy": "^4.0.0",
-    "js-yaml": "^4.1.0",
-    "mri": "^1.2.0"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "@types/js-yaml": "^4.0.9",
-    "@types/mri": "^1.1.5"
-  },
-  "scripts": {
-    "test": "bun test"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
-}
-````
-
 ## File: README.md
 ````markdown
 # pathfish
@@ -1161,6 +1122,39 @@ bun run build
 ## License
 
 MIT
+````
+
+## File: package.json
+````json
+{
+  "name": "pathfish",
+  "version": "0.1.0",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "pathfish": "src/cli.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "clipboardy": "^4.0.0",
+    "js-yaml": "^4.1.0",
+    "mri": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/js-yaml": "^4.0.9",
+    "@types/mri": "^1.1.5"
+  },
+  "scripts": {
+    "test": "bun test test"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
 ````
 
 ## File: tsconfig.json

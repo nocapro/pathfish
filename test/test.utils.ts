@@ -1,6 +1,7 @@
 import { file } from 'bun';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import yaml from 'js-yaml';
 
 /**
@@ -24,7 +25,9 @@ export async function loadYamlFixture<T = unknown>(
 export async function setupTestDirectory(files: {
   [path: string]: string;
 }): Promise<string> {
-  const tempDir = await fs.mkdtemp(path.join(process.cwd(), 'pathfish-test-'));
+  const tempDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'pathfish-test-'),
+  );
   for (const [filePath, content] of Object.entries(files)) {
     const absolutePath = path.join(tempDir, filePath);
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });

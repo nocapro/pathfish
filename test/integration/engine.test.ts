@@ -15,9 +15,7 @@ type EngineTestCase = {
 };
 
 describe('engine.ts (Integration)', async () => {
-  const fixtures = await loadYamlFixture<EngineTestCase[]>(
-    './engine.fixtures.yaml',
-  );
+  const fixtures = await loadYamlFixture<EngineTestCase[]>('integration/engine.fixtures.yaml');
 
   describe('runPipeline', () => {
     let tempDir: string;
