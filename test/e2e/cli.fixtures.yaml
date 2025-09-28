@@ -72,7 +72,7 @@
     missing.txt
 
 - name: "should make paths absolute with --absolute"
-  args: ["--no-verify", "--absolute", "--format", "list"]
+  args: ["--absolute", "--format", "list", "--no-verify"]
   stdin: "relative/path.js"
   expected_stdout: "{{CWD}}/relative/path.js"
 

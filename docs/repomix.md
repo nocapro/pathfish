@@ -26,6 +26,77 @@ tsconfig.json
 
 # Files
 
+## File: src/index.ts
+````typescript
+// Re-export core functions and types for programmatic use.
+export { extractPaths, verifyPaths, type Options } from './core';
+
+// Import the low-level clipboard utility.
+import { copyToClipboard } from './utils';
+
+/**
+ * Asynchronously copies an array of paths to the system clipboard,
+ * formatting them as a newline-separated list.
+ * It gracefully handles errors in environments without a clipboard (e.g., CI).
+ * @param paths The array of path strings to copy.
+ * @returns A promise that resolves when the operation is complete.
+ */
+export async function copyPathsToClipboard(paths: string[]): Promise<void> {
+  const textToCopy = paths.join('\n');
+  await copyToClipboard(textToCopy);
+}
+````
+
+## File: test/unit/utils.fixtures.yaml
+````yaml
+- name: "should format as a JSON array (pretty)"
+  format: "json"
+  pretty: true
+  input: ["src/index.ts", "README.md"]
+  expected: |
+    [
+      "src/index.ts",
+      "README.md"
+    ]
+
+- name: "should format as a JSON array (compact)"
+  format: "json"
+  pretty: false
+  input: ["src/index.ts", "README.md"]
+  expected: '["src/index.ts","README.md"]'
+
+- name: "should format as a YAML list"
+  format: "yaml"
+  pretty: true # pretty is ignored for yaml in current impl
+  input: ["src/index.ts", "README.md"]
+  expected: |
+    - src/index.ts
+    - README.md
+
+- name: "should format as a newline-separated list"
+  format: "list"
+  pretty: true # pretty is ignored for list
+  input: ["src/index.ts", "README.md"]
+  expected: |
+    src/index.ts
+    README.md
+
+- name: "should handle empty input correctly for all formats"
+  cases:
+    - format: "json"
+      pretty: true
+      input: []
+      expected: "[]"
+    - format: "yaml"
+      pretty: true
+      input: []
+      expected: "[]\n" # js-yaml adds a newline for empty array
+    - format: "list"
+      pretty: true
+      input: []
+      expected: ""
+````
+
 ## File: src/engine.ts
 ````typescript
 import { extractPaths, verifyPaths, type Options } from './core';
@@ -83,27 +154,6 @@ export async function runPipeline(
   const formattedOutput = format(verifiedPaths);
 
   return formattedOutput;
-}
-````
-
-## File: src/index.ts
-````typescript
-// Re-export core functions and types for programmatic use.
-export { extractPaths, verifyPaths, type Options } from './core';
-
-// Import the low-level clipboard utility.
-import { copyToClipboard } from './utils';
-
-/**
- * Asynchronously copies an array of paths to the system clipboard,
- * formatting them as a newline-separated list.
- * It gracefully handles errors in environments without a clipboard (e.g., CI).
- * @param paths The array of path strings to copy.
- * @returns A promise that resolves when the operation is complete.
- */
-export async function copyPathsToClipboard(paths: string[]): Promise<void> {
-  const textToCopy = paths.join('\n');
-  await copyToClipboard(textToCopy);
 }
 ````
 
@@ -230,7 +280,7 @@ export async function copyToClipboard(text: string): Promise<void> {
     missing.txt
 
 - name: "should make paths absolute with --absolute"
-  args: ["--no-verify", "--absolute", "--format", "list"]
+  args: ["--absolute", "--format", "list", "--no-verify"]
   stdin: "relative/path.js"
   expected_stdout: "{{CWD}}/relative/path.js"
 
@@ -282,7 +332,7 @@ export async function copyToClipboard(text: string): Promise<void> {
     ]
 
 - name: "Pipeline with verification, filtering out non-existent paths"
-  options: { format: 'list' } # verify: true is now default
+  options: { format: 'list', verify: true }
   input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
   files:
     'file1.txt': 'content'
@@ -292,13 +342,13 @@ export async function copyToClipboard(text: string): Promise<void> {
     dir/file2.log
 
 - name: "Pipeline with absolute path conversion"
-  options: { absolute: true, format: 'json', pretty: false, verify: false }
+  options: { absolute: true, format: 'json', pretty: false, verify: false } # verification disabled
   input: "Relative path: src/main.js and ./index.html"
   files: {}
   expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
 
 - name: "Pipeline with verification and absolute path conversion"
-  options: { absolute: true, format: 'yaml' } # verify: true is now default
+  options: { absolute: true, format: 'yaml', verify: true }
   input: "Real: src/app.ts. Fake: src/fake.ts"
   files:
     'src/app.ts': 'export default {}'
@@ -318,6 +368,54 @@ export async function copyToClipboard(text: string): Promise<void> {
   input: "Just some regular text without any paths."
   files: {}
   expected: "[]"
+````
+
+## File: test/integration/engine.test.ts
+````typescript
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { runPipeline, type PipelineOptions } from '../../src/engine';
+import {
+  loadYamlFixture,
+  setupTestDirectory,
+  cleanupTestDirectory,
+} from '../test.utils';
+
+type EngineTestCase = {
+  name: string;
+  options: PipelineOptions;
+  input: string;
+  files: { [path: string]: string };
+  expected: string;
+};
+
+describe('engine.ts (Integration)', async () => {
+  const fixtures = await loadYamlFixture<EngineTestCase[]>('integration/engine.fixtures.yaml');
+
+  describe('runPipeline', () => {
+    let tempDir: string;
+
+    for (const { name, options, input, files, expected } of fixtures) {
+      // Each test case gets its own directory setup
+      beforeEach(async () => {
+        tempDir = await setupTestDirectory(files);
+      });
+
+      afterEach(async () => {
+        await cleanupTestDirectory(tempDir);
+      });
+
+      it(name, async () => {
+        // Use the temp directory as the CWD for the pipeline
+        const result = await runPipeline(input, { ...options, cwd: tempDir });
+
+        // Replace placeholder in expected output with the actual temp dir path
+        const expectedWithCwd = expected.replaceAll('{{CWD}}', tempDir).trim();
+
+        expect(result.trim()).toEqual(expectedWithCwd);
+      });
+    }
+  });
+});
 ````
 
 ## File: test/unit/core.fixtures.yaml
@@ -389,54 +487,233 @@ export async function copyToClipboard(text: string): Promise<void> {
   expected: []
 ````
 
-## File: test/unit/utils.fixtures.yaml
-````yaml
-- name: "should format as a JSON array (pretty)"
-  format: "json"
-  pretty: true
-  input: ["src/index.ts", "README.md"]
-  expected: |
-    [
-      "src/index.ts",
-      "README.md"
-    ]
+## File: test/unit/utils.test.ts
+````typescript
+import { describe, it, expect } from 'bun:test';
+import { createFormatter, type Format } from '../../src/utils';
+import { loadYamlFixture } from '../test.utils';
 
-- name: "should format as a JSON array (compact)"
-  format: "json"
-  pretty: false
-  input: ["src/index.ts", "README.md"]
-  expected: '["src/index.ts","README.md"]'
+type FormatterTestCase = {
+  name: string;
+  format: Format;
+  pretty: boolean;
+  input: string[];
+  expected: string;
+};
 
-- name: "should format as a YAML list"
-  format: "yaml"
-  pretty: true # pretty is ignored for yaml in current impl
-  input: ["src/index.ts", "README.md"]
-  expected: |
-    - src/index.ts
-    - README.md
+type FormatterFixture = (
+  | FormatterTestCase
+  | { name: string; cases: FormatterTestCase[] }
+)[];
 
-- name: "should format as a newline-separated list"
-  format: "list"
-  pretty: true # pretty is ignored for list
-  input: ["src/index.ts", "README.md"]
-  expected: |
-    src/index.ts
-    README.md
+describe('createFormatter', async () => {
+  it('should throw an error for an unknown format', () => {
+    // This is a type-level check, but we test the runtime guard
+    const badFormat = 'xml' as any;
+    expect(() => createFormatter(badFormat, true)).toThrow(
+      'Unknown format: xml',
+    );
+  });
 
-- name: "should handle empty input correctly for all formats"
-  cases:
-    - format: "json"
-      pretty: true
-      input: []
-      expected: "[]"
-    - format: "yaml"
-      pretty: true
-      input: []
-      expected: "[]\n" # js-yaml adds a newline for empty array
-    - format: "list"
-      pretty: true
-      input: []
-      expected: ""
+  const fixtures = await loadYamlFixture<FormatterFixture>('unit/utils.fixtures.yaml');
+
+  for (const fixture of fixtures) {
+    if ('cases' in fixture) {
+      describe(fixture.name, () => {
+        for (const testCase of fixture.cases) {
+          it(`should format as ${testCase.format}`, () => {
+            const format = createFormatter(testCase.format, testCase.pretty);
+            const result = format(testCase.input);
+            expect(result.trim()).toEqual(testCase.expected.trim());
+          });
+        }
+      });
+    } else {
+      it(fixture.name, () => {
+        const format = createFormatter(fixture.format, fixture.pretty);
+        const result = format(fixture.input);
+        // Use trim to handle potential trailing newlines from YAML multiline strings
+        expect(result.trim()).toEqual(fixture.expected.trim());
+      });
+    }
+  }
+});
+````
+
+## File: README.md
+````markdown
+# pathfish
+
+> Fuzzy-extract file paths from any blob of text – TypeScript CLI & programmatic API powered by Bun.
+
+## What it does
+
+Drop in compiler logs, linter output, stack traces, Git diffs, chat logs, etc.
+`pathfish` finds every **relative** or **absolute** file path that appears in the text and returns them in the format you want (JSON, YAML, plain list).
+It finds paths with or without file extensions, and can optionally **verify** that each file really exists, **copy** the list to your clipboard, or **chain** several commands together.
+
+## Install
+
+```bash
+bun add -g pathfish        # global CLI
+# or
+bun add pathfish           # local dependency
+```
+
+## CLI usage
+
+```bash
+# read from file
+pathfish lint.log
+
+# read from stdin
+eslint . | pathfish
+
+# choose output format
+pathfish --format yaml lint.log
+pathfish --format json lint.log
+pathfish --format list lint.log
+
+# pretty-print JSON (default)
+pathfish --pretty lint.log
+
+# verify that every file actually exists
+pathfish --verify lint.log
+
+# copy the resulting list to clipboard (works in CI too if clipboard available)
+pathfish --copy lint.log
+
+# multiple commands in one shot
+tsc --noEmit && eslint . | pathfish --verify --copy --format json
+```
+
+### CLI flags
+
+| Flag         | Description                          | Default |
+|--------------|--------------------------------------|---------|
+| `--format`   | `json` `yaml` `list`                 | `json`  |
+| `--pretty`   | Pretty-print JSON                    | `true`  |
+| `--absolute` | Convert relative → absolute paths    | `false` |
+| `--cwd`      | Base directory for conversion        | `process.cwd()` |
+| `--verify`   | Keep only paths that exist on disk   | `true`  |
+| `--copy`     | Copy result to system clipboard      | `false` |
+| `--help`     | Show help                            |         |
+| `--version`  | Show version                         |         |
+
+## Programmatic API
+
+```ts
+import { extractPaths, verifyPaths } from 'pathfish';
+
+const raw = await Bun.file('tsc.log').text();
+
+const paths = extractPaths(raw, {
+  absolute: true,
+  cwd: import.meta.dir,
+});
+
+const existing = await verifyPaths(paths); // skips missing files
+
+console.log(existing);
+// ["/home/you/project/src/components/SettingsScreen.tsx", ...]
+```
+
+### API signature
+
+```ts
+type Options = {
+  absolute?: boolean; // make every path absolute
+  cwd?: string;       // base for relative→absolute conversion
+  unique?: boolean;   // de-duplicate (default: true)
+};
+
+function extractPaths(text: string, opts?: Options): string[];
+
+async function verifyPaths(paths: string[]): Promise<string[]>; // keeps only existing
+async function copyPathsToClipboard(paths: string[]): Promise<void>; // cross-platform
+```
+
+## Use-cases
+
+1. **LLM context injection**
+   Agentic CLI tools can instantly feed only the **relevant** source files into an LLM prompt, slashing token cost and improving accuracy.
+
+2. **IDE-agnostic quick-open**
+   Pipe any log into `pathfish --copy` and paste into your editor’s quick-open dialogue.
+
+3. **CI hygiene checks**
+   Fail the build when referenced files are missing:
+   `tsc --noEmit | pathfish --verify --format list | wc -l | xargs test 0 -eq`
+
+4. **Batch refactoring**
+   Extract every file that triggered an ESLint warning, then run your codemod only on those files.
+
+5. **Chat-ops**
+   Slack-bot receives a stack-trace, runs `pathfish`, and returns clickable links to the exact files in your repo.
+
+## Examples
+
+### TypeScript compiler output
+
+Input
+```
+src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
+```
+
+Output (`--format json --verify`)
+```json
+[
+  "/home/you/project/src/components/SettingsScreen.tsx"
+]
+```
+
+### Dockerfile commands
+
+Input
+```
+COPY --from=builder /app/dist/server /usr/local/bin/server
+```
+
+Output (`--format list`)
+```
+/app/dist/server
+/usr/local/bin/server
+```
+
+### ESLint stylish output
+
+Input
+```
+/home/realme-book/Project/code/relaycode-new/src/components/AiProcessingScreen.tsx
+  108:1  warning  This line has a length of 123. Maximum allowed is 120  max-len
+```
+
+Output (`--format yaml --copy`)
+```yaml
+- /home/realme-book/Project/code/relaycode-new/src/components/AiProcessingScreen.tsx
+```
+(list is now in your clipboard)
+
+### Multiple commands
+
+```bash
+# one-lint to copy only real offenders
+tsc --noEmit && eslint . | pathfish --verify --copy --format list
+```
+
+## Development
+
+```bash
+git clone https://github.com/your-name/pathfish.git
+cd pathfish
+bun install
+bun test
+bun run build
+```
+
+## License
+
+MIT
 ````
 
 ## File: src/cli.ts
@@ -570,8 +847,11 @@ export type Options = {
 // This new regex improves Windows path handling and is structured for clarity.
 const PATH_REGEX = new RegExp(
   [
-    // Part 1: Full paths (e.g., C:\foo\bar, /foo/bar, ./foo, ../foo, src/foo)
-    /(?:[a-zA-Z]:)?(?:[\\/]|(?:[\w.-]+[\\/]))[\w.-]+(?:[\\/][\w.-]+)*/.source,
+    // Part 1: Paths with directory separators. Two main cases:
+    // 1a: Absolute paths (e.g., /foo/bar, C:\foo\bar)
+    /(?:[a-zA-Z]:)?(?:[\\/][\w.-]+)+/.source,
+    // 1b: Relative paths with separators (e.g., src/foo, ./foo, ../foo)
+    /[\w.-]+(?:[\\/][\w.-]+)+/.source,
     // Part 2: Standalone filenames with extensions (e.g., README.md)
     /\b[\w.-]+\.\w+\b/.source,
   ].join('|'),
@@ -696,9 +976,10 @@ describe('cli.ts (E2E)', async () => {
 
         // Resolve file paths and placeholders in args
         const processedArgs = args.map(arg => {
-          // If the arg is a file that we created for the test, make its path absolute.
+          // If the arg is a file created for the test, use its relative path.
+          // The CLI process runs inside tempDir, so relative paths work correctly.
           if (fileArgNames.includes(arg)) {
-            return path.join(tempDir, arg);
+            return arg;
           }
           // For other args (like --cwd), replace the placeholder.
           return arg.replaceAll('{{CWD}}', tempDir);
@@ -732,54 +1013,6 @@ describe('cli.ts (E2E)', async () => {
         if (expected_stderr_contains !== undefined) {
           expect(stderr).toContain(expected_stderr_contains);
         }
-      });
-    }
-  });
-});
-````
-
-## File: test/integration/engine.test.ts
-````typescript
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { runPipeline, type PipelineOptions } from '../../src/engine';
-import {
-  loadYamlFixture,
-  setupTestDirectory,
-  cleanupTestDirectory,
-} from '../test.utils';
-
-type EngineTestCase = {
-  name: string;
-  options: PipelineOptions;
-  input: string;
-  files: { [path: string]: string };
-  expected: string;
-};
-
-describe('engine.ts (Integration)', async () => {
-  const fixtures = await loadYamlFixture<EngineTestCase[]>('integration/engine.fixtures.yaml');
-
-  describe('runPipeline', () => {
-    let tempDir: string;
-
-    for (const { name, options, input, files, expected } of fixtures) {
-      // Each test case gets its own directory setup
-      beforeEach(async () => {
-        tempDir = await setupTestDirectory(files);
-      });
-
-      afterEach(async () => {
-        await cleanupTestDirectory(tempDir);
-      });
-
-      it(name, async () => {
-        // Use the temp directory as the CWD for the pipeline
-        const result = await runPipeline(input, { ...options, cwd: tempDir });
-
-        // Replace placeholder in expected output with the actual temp dir path
-        const expectedWithCwd = expected.replaceAll('{{CWD}}', tempDir).trim();
-
-        expect(result.trim()).toEqual(expectedWithCwd);
       });
     }
   });
@@ -867,59 +1100,6 @@ describe('core.ts', () => {
 });
 ````
 
-## File: test/unit/utils.test.ts
-````typescript
-import { describe, it, expect } from 'bun:test';
-import { createFormatter, type Format } from '../../src/utils';
-import { loadYamlFixture } from '../test.utils';
-
-type FormatterTestCase = {
-  name: string;
-  format: Format;
-  pretty: boolean;
-  input: string[];
-  expected: string;
-};
-
-type FormatterFixture = (
-  | FormatterTestCase
-  | { name: string; cases: FormatterTestCase[] }
-)[];
-
-describe('createFormatter', async () => {
-  it('should throw an error for an unknown format', () => {
-    // This is a type-level check, but we test the runtime guard
-    const badFormat = 'xml' as any;
-    expect(() => createFormatter(badFormat, true)).toThrow(
-      'Unknown format: xml',
-    );
-  });
-
-  const fixtures = await loadYamlFixture<FormatterFixture>('unit/utils.fixtures.yaml');
-
-  for (const fixture of fixtures) {
-    if ('cases' in fixture) {
-      describe(fixture.name, () => {
-        for (const testCase of fixture.cases) {
-          it(`should format as ${testCase.format}`, () => {
-            const format = createFormatter(testCase.format, testCase.pretty);
-            const result = format(testCase.input);
-            expect(result.trim()).toEqual(testCase.expected.trim());
-          });
-        }
-      });
-    } else {
-      it(fixture.name, () => {
-        const format = createFormatter(fixture.format, fixture.pretty);
-        const result = format(fixture.input);
-        // Use trim to handle potential trailing newlines from YAML multiline strings
-        expect(result.trim()).toEqual(fixture.expected.trim());
-      });
-    }
-  }
-});
-````
-
 ## File: test/test.utils.ts
 ````typescript
 import { file } from 'bun';
@@ -992,182 +1172,6 @@ export async function runCli(
 
   return { stdout, stderr, exitCode };
 }
-````
-
-## File: README.md
-````markdown
-# pathfish
-
-> Fuzzy-extract file paths from any blob of text – TypeScript CLI & programmatic API powered by Bun.
-
-## What it does
-
-Drop in compiler logs, linter output, stack traces, Git diffs, chat logs, etc.
-`pathfish` finds every **relative** or **absolute** file path that appears in the text and returns them in the format you want (JSON, YAML, plain list).
-It finds paths with or without file extensions, and can optionally **verify** that each file really exists, **copy** the list to your clipboard, or **chain** several commands together.
-
-## Install
-
-```bash
-bun add -g pathfish        # global CLI
-# or
-bun add pathfish           # local dependency
-```
-
-## CLI usage
-
-```bash
-# read from file
-pathfish lint.log
-
-# read from stdin
-eslint . | pathfish
-
-# choose output format
-pathfish --format yaml lint.log
-pathfish --format json lint.log
-pathfish --format list lint.log
-
-# pretty-print JSON (default)
-pathfish --pretty lint.log
-
-# verify that every file actually exists
-pathfish --verify lint.log
-
-# copy the resulting list to clipboard (works in CI too if clipboard available)
-pathfish --copy lint.log
-
-# multiple commands in one shot
-tsc --noEmit && eslint . | pathfish --verify --copy --format json
-```
-
-### CLI flags
-
-| Flag         | Description                          | Default |
-|--------------|--------------------------------------|---------|
-| `--format`   | `json` `yaml` `list`                 | `json`  |
-| `--pretty`   | Pretty-print JSON                    | `true`  |
-| `--absolute` | Convert relative → absolute paths    | `false` |
-| `--cwd`      | Base directory for conversion        | `process.cwd()` |
-| `--verify`   | Keep only paths that exist on disk   | `false` |
-| `--copy`     | Copy result to system clipboard      | `false` |
-| `--help`     | Show help                            |         |
-| `--version`  | Show version                         |         |
-
-## Programmatic API
-
-```ts
-import { extractPaths, verifyPaths } from 'pathfish';
-
-const raw = await Bun.file('tsc.log').text();
-
-const paths = extractPaths(raw, {
-  absolute: true,
-  cwd: import.meta.dir,
-});
-
-const existing = await verifyPaths(paths); // skips missing files
-
-console.log(existing);
-// ["/home/you/project/src/components/SettingsScreen.tsx", ...]
-```
-
-### API signature
-
-```ts
-type Options = {
-  absolute?: boolean; // make every path absolute
-  cwd?: string;       // base for relative→absolute conversion
-  unique?: boolean;   // de-duplicate (default: true)
-};
-
-function extractPaths(text: string, opts?: Options): string[];
-
-async function verifyPaths(paths: string[]): Promise<string[]>; // keeps only existing
-async function copyPathsToClipboard(paths: string[]): Promise<void>; // cross-platform
-```
-
-## Use-cases
-
-1. **LLM context injection**
-   Agentic CLI tools can instantly feed only the **relevant** source files into an LLM prompt, slashing token cost and improving accuracy.
-
-2. **IDE-agnostic quick-open**
-   Pipe any log into `pathfish --copy` and paste into your editor’s quick-open dialogue.
-
-3. **CI hygiene checks**
-   Fail the build when referenced files are missing:
-   `tsc --noEmit | pathfish --verify --format list | wc -l | xargs test 0 -eq`
-
-4. **Batch refactoring**
-   Extract every file that triggered an ESLint warning, then run your codemod only on those files.
-
-5. **Chat-ops**
-   Slack-bot receives a stack-trace, runs `pathfish`, and returns clickable links to the exact files in your repo.
-
-## Examples
-
-### TypeScript compiler output
-
-Input
-```
-src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
-```
-
-Output (`--format json --verify`)
-```json
-[
-  "/home/you/project/src/components/SettingsScreen.tsx"
-]
-```
-
-### Dockerfile commands
-
-Input
-```
-COPY --from=builder /app/dist/server /usr/local/bin/server
-```
-
-Output (`--format list`)
-```
-/app/dist/server
-/usr/local/bin/server
-```
-
-### ESLint stylish output
-
-Input
-```
-/home/realme-book/Project/code/relaycode-new/src/components/AiProcessingScreen.tsx
-  108:1  warning  This line has a length of 123. Maximum allowed is 120  max-len
-```
-
-Output (`--format yaml --copy`)
-```yaml
-- /home/realme-book/Project/code/relaycode-new/src/components/AiProcessingScreen.tsx
-```
-(list is now in your clipboard)
-
-### Multiple commands
-
-```bash
-# one-lint to copy only real offenders
-tsc --noEmit && eslint . | pathfish --verify --copy --format list
-```
-
-## Development
-
-```bash
-git clone https://github.com/your-name/pathfish.git
-cd pathfish
-bun install
-bun test
-bun run build
-```
-
-## License
-
-MIT
 ````
 
 ## File: tsconfig.json

@@ -51,7 +51,7 @@ tsc --noEmit && eslint . | pathfish --verify --copy --format json
 | `--pretty`   | Pretty-print JSON                    | `true`  |
 | `--absolute` | Convert relative → absolute paths    | `false` |
 | `--cwd`      | Base directory for conversion        | `process.cwd()` |
-| `--verify`   | Keep only paths that exist on disk   | `false` |
+| `--verify`   | Keep only paths that exist on disk   | `true`  |
 | `--copy`     | Copy result to system clipboard      | `false` |
 | `--help`     | Show help                            |         |
 | `--version`  | Show version                         |         |

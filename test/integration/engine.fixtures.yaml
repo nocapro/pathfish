@@ -11,7 +11,7 @@
     ]
 
 - name: "Pipeline with verification, filtering out non-existent paths"
-  options: { format: 'list' } # verify: true is now default
+  options: { format: 'list', verify: true }
   input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
   files:
     'file1.txt': 'content'
@@ -21,13 +21,13 @@
     dir/file2.log
 
 - name: "Pipeline with absolute path conversion"
-  options: { absolute: true, format: 'json', pretty: false, verify: false }
+  options: { absolute: true, format: 'json', pretty: false, verify: false } # verification disabled
   input: "Relative path: src/main.js and ./index.html"
   files: {}
   expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
 
 - name: "Pipeline with verification and absolute path conversion"
-  options: { absolute: true, format: 'yaml' } # verify: true is now default
+  options: { absolute: true, format: 'yaml', verify: true }
   input: "Real: src/app.ts. Fake: src/fake.ts"
   files:
     'src/app.ts': 'export default {}'

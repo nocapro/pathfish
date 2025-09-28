@@ -32,8 +32,11 @@ export type Options = {
 // This new regex improves Windows path handling and is structured for clarity.
 const PATH_REGEX = new RegExp(
   [
-    // Part 1: Full paths (e.g., C:\foo\bar, /foo/bar, ./foo, ../foo, src/foo)
-    /(?:[a-zA-Z]:)?(?:[\\/]|(?:[\w.-]+[\\/]))[\w.-]+(?:[\\/][\w.-]+)*/.source,
+    // Part 1: Paths with directory separators. Two main cases:
+    // 1a: Absolute paths (e.g., /foo/bar, C:\foo\bar)
+    /(?:[a-zA-Z]:)?(?:[\\\/][\w.-]+)+/.source,
+    // 1b: Relative paths with separators (e.g., src/foo, ./foo, ../foo)
+    /[\w.-]+(?:[\\\/][\w.-]+)+/.source,
     // Part 2: Standalone filenames with extensions (e.g., README.md)
     /\b[\w.-]+\.\w+\b/.source,
   ].join('|'),

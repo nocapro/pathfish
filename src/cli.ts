@@ -1,9 +1,13 @@
 #!/usr/bin/env bun
 
 import mri from 'mri';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runPipeline, type PipelineOptions } from './engine';
 import { copyToClipboard, type Format } from './utils';
-import { version } from '../package.json' with { type: 'json' };
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const { version } = await Bun.file(path.join(__dirname, '../package.json')).json();
 
 const HELP_TEXT = `
 pathfish v${version}

@@ -51,9 +51,10 @@ describe('cli.ts (E2E)', async () => {
 
         // Resolve file paths and placeholders in args
         const processedArgs = args.map(arg => {
-          // If the arg is a file that we created for the test, make its path absolute.
+          // If the arg is a file created for the test, use its relative path.
+          // The CLI process runs inside tempDir, so relative paths work correctly.
           if (fileArgNames.includes(arg)) {
-            return path.join(tempDir, arg);
+            return arg;
           }
           // For other args (like --cwd), replace the placeholder.
           return arg.replaceAll('{{CWD}}', tempDir);
