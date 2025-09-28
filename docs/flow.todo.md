@@ -1,3 +1,74 @@
+this is the published version of pathfish, guardrails below problems into test cases, I also checked that the file exists.
+
+---------------
+
+realme-book@realme-book:~/Project/code/relaycode-new$ bun tsc -b | pathfish
+error: "tsc" exited with code 1
+[
+  "src/hooks/useDebugMenu.tsx",
+  "src/services/copy.service.ts",
+  "src/services/init.service.ts"
+]
+realme-book@realme-book:~/Project/code/relaycode-new$ bun tsc -b
+src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
+
+5 import { AI_PROVIDERS, SETTINGS_FOOTER_ACTIONS } from '../constants/settings.constants';
+           ~~~~~~~~~~~~
+
+src/hooks/useDebugMenu.tsx:101:29 - error TS2554: Expected 4 arguments, but got 3.
+
+101                 initActions.setAnalysisResults('relaycode-tui', true, false);
+                                ~~~~~~~~~~~~~~~~~~
+
+  src/stores/init.store.ts:30:99
+    30         setAnalysisResults: (projectId: string, gitignoreFound: boolean, gitInitialized: boolean, configExists: boolean) => void;
+                                                                                                         ~~~~~~~~~~~~~~~~~~~~~
+    An argument for 'configExists' was not provided.
+
+src/services/copy.service.ts:5:10 - error TS2305: Module '"./fs.service"' has no exported member 'FileSystemService'.
+
+5 import { FileSystemService } from './fs.service';
+           ~~~~~~~~~~~~~~~~~
+
+src/services/init.service.ts:10:32 - error TS2305: Module '"../constants/fs.constants"' has no exported member 'PROMPT_FILE_NAME'.
+
+10 import { STATE_DIRECTORY_NAME, PROMPT_FILE_NAME } from '../constants/fs.constants';
+                                  ~~~~~~~~~~~~~~~~
+
+src/services/init.service.ts:20:25 - error TS2554: Expected 1 arguments, but got 0.
+
+20         await FsService.updateGitignore();
+                           ~~~~~~~~~~~~~~~
+
+  src/services/fs.service.ts:42:32
+    42 const updateGitignore = async (cwd: string): Promise<{ created: boolean, updated: boolean }> => {
+                                      ~~~~~~~~~~~
+    An argument for 'cwd' was not provided.
+
+
+Found 5 errors.
+
+error: "tsc" exited with code 1
+realme-book@realme-book:~/Project/code/relaycode-new$ bun tsc -b | pathfish --no-verify --format list
+error: "tsc" exited with code 1
+src/components/SettingsScreen.tsx(5,10):
+src/hooks/useDebugMenu.tsx
+src/services/copy.service.ts
+src/services/init.service.ts
+src/services/init.service.ts(20,25):
+realme-book@realme-book:~/Project/code/relaycode-new$ bun tsc -b | pathfish --no-verify
+error: "tsc" exited with code 1
+[
+  "src/components/SettingsScreen.tsx(5,10):",
+  "src/hooks/useDebugMenu.tsx",
+  "src/services/copy.service.ts",
+  "src/services/init.service.ts",
+  "src/services/init.service.ts(20,25):"
+]
+realme-book@realme-book:~/Project/code/relaycode-new$
+
+--------------------
+
 === DONE
 
 1. prepare for npm publishing. implement eslint and tsup. make sure no eslint problems

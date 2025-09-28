@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { runPipeline, type PipelineOptions } from '../../src/engine';
+import { runPipeline, type PipelineOptions } from '../../dist/engine.js';
 import {
   loadYamlFixture,
   setupTestDirectory,

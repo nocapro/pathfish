@@ -197,70 +197,17 @@ export const createFormatter = (format: Format, pretty: boolean) => {
 export async function copyToClipboard(text: string): Promise<void> {
   try {
     await clipboardy.write(text);
-  } catch (error) {
+  } catch {
     // Suppress errors in environments without a clipboard. Copying is a
     // "nice-to-have" side effect, not a critical function.
   }
 }
 ````
 
-## File: test/unit/utils.test.ts
-````typescript
-import { describe, it, expect } from 'bun:test';
-import { createFormatter, type Format } from '../../src/utils';
-import { loadYamlFixture } from '../test.utils';
-
-type FormatterTestCase = {
-  name: string;
-  format: Format;
-  pretty: boolean;
-  input: string[];
-  expected: string;
-};
-
-type FormatterFixture = (
-  | FormatterTestCase
-  | { name: string; cases: FormatterTestCase[] }
-)[];
-
-describe('createFormatter', async () => {
-  it('should throw an error for an unknown format', () => {
-    // This is a type-level check, but we test the runtime guard
-    const badFormat = 'xml' as any;
-    expect(() => createFormatter(badFormat, true)).toThrow(
-      'Unknown format: xml',
-    );
-  });
-
-  const fixtures = await loadYamlFixture<FormatterFixture>('unit/utils.fixtures.yaml');
-
-  for (const fixture of fixtures) {
-    if ('cases' in fixture) {
-      describe(fixture.name, () => {
-        for (const testCase of fixture.cases) {
-          it(`should format as ${testCase.format}`, () => {
-            const format = createFormatter(testCase.format, testCase.pretty);
-            const result = format(testCase.input);
-            expect(result.trim()).toEqual(testCase.expected.trim());
-          });
-        }
-      });
-    } else {
-      it(fixture.name, () => {
-        const format = createFormatter(fixture.format, fixture.pretty);
-        const result = format(fixture.input);
-        // Use trim to handle potential trailing newlines from YAML multiline strings
-        expect(result.trim()).toEqual(fixture.expected.trim());
-      });
-    }
-  }
-});
-````
-
 ## File: test/integration/engine.test.ts
 ````typescript
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { runPipeline, type PipelineOptions } from '../../src/engine';
+import { runPipeline, type PipelineOptions } from '../../dist/engine.js';
 import {
   loadYamlFixture,
   setupTestDirectory,
@@ -311,7 +258,7 @@ describe('engine.ts (Integration)', async () => {
 ````typescript
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import path from 'node:path';
-import { extractPaths, verifyPaths, type Options } from '../../src/core';
+import { extractPaths, verifyPaths, type Options } from '../../dist/index.js';
 import {
   loadYamlFixture,
   setupTestDirectory,
@@ -388,214 +335,57 @@ describe('core.ts', () => {
 });
 ````
 
-## File: README.md
-````markdown
-# pathfish
+## File: test/unit/utils.test.ts
+````typescript
+import { describe, it, expect } from 'bun:test';
+import { createFormatter, type Format } from '../../dist/utils.js';
+import { loadYamlFixture } from '../test.utils';
 
-> Fuzzy-extract file paths from any blob of text – TypeScript CLI & programmatic API powered by Bun.
-
-## What it does
-
-Drop in compiler logs, linter output, stack traces, Git diffs, chat logs, etc.
-`pathfish` finds every **relative** or **absolute** file path that appears in the text and returns them in the format you want (JSON, YAML, plain list).
-It finds paths with or without file extensions, and can optionally **verify** that each file really exists, **copy** the list to your clipboard, or **chain** several commands together.
-
-## Install
-
-```bash
-bun add -g pathfish        # global CLI
-# or
-bun add pathfish           # local dependency
-```
-
-## CLI usage
-
-```bash
-# read from file
-pathfish lint.log
-
-# read from stdin
-eslint . | pathfish
-
-# choose output format
-pathfish --format yaml lint.log
-pathfish --format json lint.log
-pathfish --format list lint.log
-
-# pretty-print JSON (default)
-pathfish --pretty lint.log
-
-# verify that every file actually exists
-pathfish --verify lint.log
-
-# copy the resulting list to clipboard (works in CI too if clipboard available)
-pathfish --copy lint.log
-
-# multiple commands in one shot
-tsc --noEmit && eslint . | pathfish --verify --copy --format json
-```
-
-### CLI flags
-
-| Flag         | Description                          | Default |
-|--------------|--------------------------------------|---------|
-| `--format`   | `json` `yaml` `list`                 | `json`  |
-| `--pretty`   | Pretty-print JSON                    | `true`  |
-| `--absolute` | Convert relative → absolute paths    | `false` |
-| `--cwd`      | Base directory for conversion        | `process.cwd()` |
-| `--verify`   | Keep only paths that exist on disk   | `true`  |
-| `--copy`     | Copy result to system clipboard      | `false` |
-| `--help`     | Show help                            |         |
-| `--version`  | Show version                         |         |
-
-## Programmatic API
-
-```ts
-import { extractPaths, verifyPaths } from 'pathfish';
-
-const raw = await Bun.file('tsc.log').text();
-
-const paths = extractPaths(raw, {
-  absolute: true,
-  cwd: import.meta.dir,
-});
-
-const existing = await verifyPaths(paths); // skips missing files
-
-console.log(existing);
-// ["/home/you/project/src/components/SettingsScreen.tsx", ...]
-```
-
-### API signature
-
-```ts
-type Options = {
-  absolute?: boolean; // make every path absolute
-  cwd?: string;       // base for relative→absolute conversion
-  unique?: boolean;   // de-duplicate (default: true)
+type FormatterTestCase = {
+  name: string;
+  format: Format;
+  pretty: boolean;
+  input: string[];
+  expected: string;
 };
 
-function extractPaths(text: string, opts?: Options): string[];
+type FormatterFixture = (
+  | FormatterTestCase
+  | { name: string; cases: FormatterTestCase[] }
+)[];
 
-async function verifyPaths(paths: string[]): Promise<string[]>; // keeps only existing
-async function copyPathsToClipboard(paths: string[]): Promise<void>; // cross-platform
-```
+describe('createFormatter', async () => {
+  it('should throw an error for an unknown format', () => {
+    // This is a type-level check, but we test the runtime guard
+    const badFormat = 'xml' as unknown as Format;
+    expect(() => createFormatter(badFormat, true)).toThrow(
+      'Unknown format: xml',
+    );
+  });
 
-## Use-cases
+  const fixtures = await loadYamlFixture<FormatterFixture>('unit/utils.fixtures.yaml');
 
-1. **LLM context injection**
-   Agentic CLI tools can instantly feed only the **relevant** source files into an LLM prompt, slashing token cost and improving accuracy.
-
-2. **IDE-agnostic quick-open**
-   Pipe any log into `pathfish --copy` and paste into your editor’s quick-open dialogue.
-
-3. **CI hygiene checks**
-   Fail the build when referenced files are missing:
-   `tsc --noEmit | pathfish --verify --format list | wc -l | xargs test 0 -eq`
-
-4. **Batch refactoring**
-   Extract every file that triggered an ESLint warning, then run your codemod only on those files.
-
-5. **Chat-ops**
-   Slack-bot receives a stack-trace, runs `pathfish`, and returns clickable links to the exact files in your repo.
-
-## Examples
-
-### TypeScript compiler output
-
-Input
-```
-src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
-```
-
-Output (`--format json --verify`)
-```json
-[
-  "/home/you/project/src/components/SettingsScreen.tsx"
-]
-```
-
-### Dockerfile commands
-
-Input
-```
-COPY --from=builder /app/dist/server /usr/local/bin/server
-```
-
-Output (`--format list`)
-```
-/app/dist/server
-/usr/local/bin/server
-```
-
-### ESLint stylish output
-
-Input
-```
-/home/realme-book/Project/code/relaycode-new/src/components/AiProcessingScreen.tsx
-  108:1  warning  This line has a length of 123. Maximum allowed is 120  max-len
-```
-
-Output (`--format yaml --copy`)
-```yaml
-- /home/realme-book/Project/code/relaycode-new/src/components/AiProcessingScreen.tsx
-```
-(list is now in your clipboard)
-
-### Multiple commands
-
-```bash
-# one-lint to copy only real offenders
-tsc --noEmit && eslint . | pathfish --verify --copy --format list
-```
-
-## Development
-
-```bash
-git clone https://github.com/your-name/pathfish.git
-cd pathfish
-bun install
-bun test
-bun run build
-```
-
-## License
-
-MIT
-````
-
-## File: tsconfig.json
-````json
-{
-  "compilerOptions": {
-    // Environment setup & latest features
-    "lib": ["ESNext"],
-    "target": "ESNext",
-    "module": "Preserve",
-    "moduleDetection": "force",
-    "jsx": "react-jsx",
-    "allowJs": true,
-
-    // Bundler mode
-    "moduleResolution": "bundler",
-    "verbatimModuleSyntax": true,
-    "noEmit": false,
-    "outDir": "dist",
-
-    // Best practices
-    "strict": true,
-    "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-
-    // Some stricter flags (disabled by default)
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
-  },
-  "include": ["src", "test"]
-}
+  for (const fixture of fixtures) {
+    if ('cases' in fixture) {
+      describe(fixture.name, () => {
+        for (const testCase of fixture.cases) {
+          it(`should format as ${testCase.format}`, () => {
+            const format = createFormatter(testCase.format, testCase.pretty);
+            const result = format(testCase.input);
+            expect(result.trim()).toEqual(testCase.expected.trim());
+          });
+        }
+      });
+    } else {
+      it(fixture.name, () => {
+        const format = createFormatter(fixture.format, fixture.pretty);
+        const result = format(fixture.input);
+        // Use trim to handle potential trailing newlines from YAML multiline strings
+        expect(result.trim()).toEqual(fixture.expected.trim());
+      });
+    }
+  }
+});
 ````
 
 ## File: test/e2e/cli.fixtures.yaml
@@ -795,6 +585,363 @@ MIT
     real dir/real file.txt
 ````
 
+## File: test/test.utils.ts
+````typescript
+import { file } from 'bun';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import yaml from 'js-yaml';
+
+/**
+ * Loads and parses a YAML fixture file.
+ * @param filePath The path to the YAML file, relative to the `test` directory.
+ * @returns The parsed data from the YAML file.
+ */
+export async function loadYamlFixture<T = unknown>(
+  filePath: string,
+): Promise<T> {
+  const absolutePath = path.resolve(process.cwd(), 'test', filePath);
+  const fileContent = await file(absolutePath).text();
+  return yaml.load(fileContent) as T;
+}
+
+/**
+ * Creates a temporary directory and populates it with the specified files.
+ * @param files A map where keys are relative file paths and values are their content.
+ * @returns The absolute path to the created temporary directory.
+ */
+export async function setupTestDirectory(files: {
+  [path: string]: string;
+}): Promise<string> {
+  const tempDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'pathfish-test-'),
+  );
+
+  for (const [filePath, content] of Object.entries(files)) {
+    const absolutePath = path.join(tempDir, filePath);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, content);
+  }
+  return tempDir;
+}
+
+/**
+ * Recursively removes a directory.
+ * @param dirPath The absolute path to the directory to remove.
+ */
+export async function cleanupTestDirectory(dirPath: string): Promise<void> {
+  await fs.rm(dirPath, { recursive: true, force: true });
+}
+
+/**
+ * Executes the CLI in a separate process.
+ * @param args An array of command-line arguments.
+ * @param stdinInput An optional string to pipe to the process's stdin.
+ * @param cwd The working directory for the spawned process.
+ * @returns A promise that resolves with the process's stdout, stderr, and exit code.
+ */
+export async function runCli(
+  args: string[],
+  stdinInput?: string,
+  cwd?: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const cliPath = path.resolve(process.cwd(), 'dist/cli.js');
+
+  const proc = Bun.spawn(['bun', cliPath, ...args], {
+    stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
+    cwd,
+    stderr: 'pipe',
+    stdout: 'pipe',
+  });
+
+  const exitCode = await proc.exited;
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+
+  return { stdout, stderr, exitCode };
+}
+````
+
+## File: README.md
+````markdown
+# pathfish 🐠
+
+> **Fuzzy-extract file paths from any blob of text** – Cross-platform CLI & programmatic API for Node.js and Bun.
+
+`pathfish` finds every **relative** or **absolute** file path that appears in text. By default, it **verifies** that each path exists on disk, giving you a clean, reliable list.
+
+## 🚀 What it does
+
+Drop in compiler logs, linter output, stack traces, Git diffs, or chat logs. `pathfish` intelligently extracts all file paths and returns them in the format you want (JSON, YAML, plain list).
+
+-   ✅ **Verifies paths by default**: Only returns paths that actually exist.
+-   🧠 **Fuzzy matching**: Catches paths with or without extensions, with line/column numbers, and in various formats (Unix, Windows, relative, absolute).
+-   🎨 **Multiple formats**: Output as JSON, YAML, or a simple list.
+-   📋 **Clipboard support**: Instantly copy the output to your clipboard with `--copy`.
+-   🔗 **Chainable**: Designed to be a powerful part of your shell pipelines.
+
+## 📦 Install
+
+**For CLI usage:**
+```bash
+# Global CLI (recommended)
+npm install -g pathfish
+
+# Or with Bun
+bun add -g pathfish
+```
+
+**For programmatic use:**
+```bash
+# With npm
+npm install pathfish
+
+# With Bun
+bun add pathfish
+
+# With yarn
+yarn add pathfish
+
+# With pnpm
+pnpm add pathfish
+```
+
+## 💻 CLI usage
+
+```bash
+# Read from a file (only shows paths that exist)
+pathfish lint.log
+
+# Read from stdin
+eslint . | pathfish
+
+# Choose an output format
+pathfish --format yaml lint.log
+pathfish --format list lint.log
+
+# Include paths that DON'T exist on disk
+pathfish --no-verify lint.log
+
+# Copy the resulting list to your clipboard
+eslint . | pathfish --copy --format list
+
+# Convert all paths to be absolute
+pathfish --absolute lint.log
+
+# A powerful pipeline: find all paths from TS and ESLint,
+# make them absolute, and copy the list to the clipboard.
+(tsc --noEmit && eslint .) | pathfish --absolute --copy --format list
+```
+
+## 🚩 CLI flags
+
+| Flag                | Description                                                          | Default         |
+| ------------------- | -------------------------------------------------------------------- | --------------- |
+| `--format <format>` | Output format: `json`, `yaml`, `list`.                               | `json`          |
+| `--pretty`          | Pretty-print JSON output.                                            | `true`          |
+| `--absolute`        | Convert all paths to be absolute.                                    | `false`         |
+| `--cwd <dir>`       | Base directory for resolving paths.                                  | `process.cwd()` |
+| `--no-verify`       | **Disable verification**; include paths that don't exist on disk.    | (not set)       |
+| `--copy`            | Copy the final output to the clipboard.                              | `false`         |
+| `--help`, `-h`      | Show this help message.                                              |                 |
+| `--version`, `-v`   | Show the version number.                                             |                 |
+
+## 🛠️ Programmatic API
+
+You can also use `pathfish` as a library in your own projects. Works with both Node.js and Bun!
+
+```ts
+import { extractPaths, verifyPaths } from 'pathfish';
+
+// For Node.js
+import { readFileSync } from 'fs';
+const raw = readFileSync('tsc.log', 'utf8');
+
+// For Bun
+// const raw = await Bun.file('tsc.log').text();
+
+// 1. Extract all potential path-like strings from text
+const potentialPaths = extractPaths(raw, {
+  absolute: true,
+  cwd: process.cwd(), // or import.meta.dir for Bun
+});
+
+// 2. Filter the list to only include paths that exist
+const existingPaths = await verifyPaths(potentialPaths);
+
+console.log(existingPaths);
+// ["/home/you/project/src/components/SettingsScreen.tsx", ...]
+```
+
+### API Signature
+
+```ts
+type Options = {
+  absolute?: boolean; // make every path absolute
+  cwd?: string;       // base for relative→absolute conversion
+  unique?: boolean;   // de-duplicate (default: true)
+};
+
+function extractPaths(text: string, opts?: Options): string[];
+
+async function verifyPaths(paths: string[]): Promise<string[]>; // keeps only existing
+async function copyPathsToClipboard(paths: string[]): Promise<void>; // cross-platform
+```
+
+*(Note: The main `pathfish` CLI command runs `extractPaths` and `verifyPaths` together by default.)*
+
+## ✨ Use-cases
+
+1.  **🤖 LLM Context Injection**
+    Pipe linter or compiler output to `pathfish` to get a list of relevant files, then feed their contents into an LLM prompt for more accurate, context-aware responses.
+
+2.  **⚡ IDE-Agnostic Quick-Open**
+    Pipe any log into `pathfish --copy --format list` and paste the result directly into your editor’s quick-open dialog to instantly open all referenced files.
+
+3.  **✅ CI Sanity Checks**
+    Fail a CI build if logs reference files that have been moved or deleted.
+    ```bash
+    # Get all paths mentioned in linter output
+    eslint . | pathfish --no-verify --format list > all_paths.txt
+
+    # Get only the paths that actually exist
+    eslint . | pathfish --format list > existing_paths.txt
+
+    # If the files don't match, there's a missing reference. Fail the build.
+    diff all_paths.txt existing_paths.txt && exit 1 || echo "All paths are valid!"
+    ```
+
+4.  **🎯 Batch Refactoring**
+    Extract every file that triggered an ESLint warning, then run a codemod or script only on that specific list of files.
+    `eslint . | pathfish --format list | xargs your-codemod-script`
+
+5.  **💬 Chat-Ops**
+    Have a Slack bot receive a stack trace, run `pathfish` on it, and reply with clickable links to the exact files in your repository.
+
+## 📜 Examples
+
+### TypeScript Compiler Output
+
+**Input:**
+```
+src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
+src/utils/non-existent.ts:1:1 - error TS2307: Cannot find module './fake'.
+```
+
+**Command:** `pathfish`
+
+**Output:** (Only `SettingsScreen.tsx` is returned because it exists)
+```json
+[
+  "src/components/SettingsScreen.tsx"
+]
+```
+
+### Dockerfile Commands
+
+**Input:**
+```
+COPY --from=builder /app/dist/server /usr/local/bin/server
+```
+
+**Command:** `pathfish --no-verify --format list` (using `--no-verify` because paths are in a container)
+
+**Output:**
+```
+/app/dist/server
+/usr/local/bin/server
+```
+
+### ESLint Stylish Output
+
+**Input:**
+```
+/home/user/project/src/components/Button.tsx
+  108:1  warning  This line has a length of 123  max-len
+```
+
+**Command:** `pathfish --format yaml --copy`
+
+**Output:** (and copied to your clipboard)
+```yaml
+- /home/user/project/src/components/Button.tsx
+```
+
+## 🏗️ Development
+
+```bash
+git clone https://github.com/your-name/pathfish.git
+cd pathfish
+
+# Install dependencies
+npm install
+# or bun install
+
+# Run tests
+npm test
+# or bun test
+
+# Build the project
+npm run build
+# or bun run build
+
+# Lint the code
+npm run lint
+
+# Type check
+npm run typecheck
+```
+
+## ✅ Quality Assurance
+
+- **62+ automated tests** covering all core functionality
+- **ESLint** enforced code style
+- **TypeScript** strict mode enabled
+- **Cross-platform** testing (Node.js + Bun)
+- **Zero dependencies** in production (only 3 lightweight dev dependencies)
+- **Comprehensive error handling** with graceful degradation
+
+## 📄 License
+
+MIT
+````
+
+## File: tsconfig.json
+````json
+{
+  "compilerOptions": {
+    // Environment setup & latest features
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "allowJs": true,
+
+    // Bundler mode
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true,
+    "noEmit": false,
+    "outDir": "dist",
+
+    // Best practices
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+
+    // Some stricter flags (disabled by default)
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noPropertyAccessFromIndexSignature": false
+  },
+  "include": ["src", "test"]
+}
+````
+
 ## File: test/unit/core.fixtures.yaml
 ````yaml
 - name: "Basic path extraction"
@@ -942,7 +1089,7 @@ MIT
 
 - name: "Paths with scoped npm packages"
   options: {}
-  input: "Requires \"@scoped/package/index.js\" and also regular 'package/main.js'"
+  input: 'Requires "@scoped/package/index.js" and also regular ''package/main.js'''
   expected:
     - "@scoped/package/index.js"
     - "package/main.js"
@@ -1004,228 +1151,58 @@ MIT
     - "file1.txt"
     - "file2.log"
     - "path/to/file3.json"
-````
+- name: "Should extract paths from TypeScript compiler error output"
+  options: {}
+  input: |
+    src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
 
-## File: test/test.utils.ts
-````typescript
-import { file } from 'bun';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import os from 'node:os';
-import yaml from 'js-yaml';
+    5 import { AI_PROVIDERS, SETTINGS_FOOTER_ACTIONS } from '../constants/settings.constants';
+               ~~~~~~~~~~~~
 
-/**
- * Loads and parses a YAML fixture file.
- * @param filePath The path to the YAML file, relative to the `test` directory.
- * @returns The parsed data from the YAML file.
- */
-export async function loadYamlFixture<T = unknown>(
-  filePath: string,
-): Promise<T> {
-  const absolutePath = path.resolve(process.cwd(), 'test', filePath);
-  const fileContent = await file(absolutePath).text();
-  return yaml.load(fileContent) as T;
-}
+    src/hooks/useDebugMenu.tsx:101:29 - error TS2554: Expected 4 arguments, but got 3.
 
-/**
- * Creates a temporary directory and populates it with the specified files.
- * @param files A map where keys are relative file paths and values are their content.
- * @returns The absolute path to the created temporary directory.
- */
-export async function setupTestDirectory(files: {
-  [path: string]: string;
-}): Promise<string> {
-  const tempDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), 'pathfish-test-'),
-  );
+    101                 initActions.setAnalysisResults('relaycode-tui', true, false);
+                                    ~~~~~~~~~~~~~~~~~~
 
-  for (const [filePath, content] of Object.entries(files)) {
-    const absolutePath = path.join(tempDir, filePath);
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, content);
-  }
-  return tempDir;
-}
+      src/stores/init.store.ts:30:99
+        30         setAnalysisResults: (projectId: string, gitignoreFound: boolean, gitInitialized: boolean, configExists: boolean) => void;
+                                      ~~~~~~~~~~~~~~~~~~~~~
+        An argument for 'configExists' was not provided.
 
-/**
- * Recursively removes a directory.
- * @param dirPath The absolute path to the directory to remove.
- */
-export async function cleanupTestDirectory(dirPath: string): Promise<void> {
-  await fs.rm(dirPath, { recursive: true, force: true });
-}
+    src/services/copy.service.ts:5:10 - error TS2305: Module '"./fs.service"' has no exported member 'FileSystemService'.
 
-/**
- * Executes the CLI in a separate process.
- * @param args An array of command-line arguments.
- * @param stdinInput An optional string to pipe to the process's stdin.
- * @param cwd The working directory for the spawned process.
- * @returns A promise that resolves with the process's stdout, stderr, and exit code.
- */
-export async function runCli(
-  args: string[],
-  stdinInput?: string,
-  cwd?: string,
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
+    5 import { FileSystemService } from './fs.service';
+               ~~~~~~~~~~~~~~~~~
 
-  const proc = Bun.spawn(['bun', 'run', cliPath, ...args], {
-    stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
-    cwd,
-    stderr: 'pipe',
-    stdout: 'pipe',
-  });
+    src/services/init.service.ts:10:32 - error TS2305: Module '"../constants/fs.constants"' has no exported member 'PROMPT_FILE_NAME'.
 
-  const exitCode = await proc.exited;
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
+    10 import { STATE_DIRECTORY_NAME, PROMPT_FILE_NAME } from '../constants/fs.constants';
+                                      ~~~~~~~~~~~~~~~~
+    src/services/init.service.ts:20:25 - error TS2554: Expected 1 arguments, but got 0.
 
-  return { stdout, stderr, exitCode };
-}
-````
+    20         await FsService.updateGitignore();
+                               ~~~~~~~~~~~~~~~~
 
-## File: package.json
-````json
-{
-  "name": "pathfish",
-  "version": "0.1.0",
-  "module": "src/index.ts",
-  "type": "module",
-  "private": true,
-  "bin": {
-    "pathfish": "src/cli.ts"
-  },
-  "files": [
-    "src"
-  ],
-  "dependencies": {
-    "clipboardy": "^4.0.0",
-    "js-yaml": "^4.1.0",
-    "mri": "^1.2.0"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "@types/js-yaml": "^4.0.9",
-    "@types/mri": "^1.1.5"
-  },
-  "scripts": {
-    "test": "bun test test"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
-}
-````
-
-## File: src/cli.ts
-````typescript
-#!/usr/bin/env bun
-
-import mri from 'mri';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { runPipeline, type PipelineOptions } from './engine';
-import { copyToClipboard, type Format } from './utils';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const { version } = await Bun.file(path.join(__dirname, '../package.json')).json();
-
-const HELP_TEXT = `
-pathfish v${version}
-Fuzzy-extract file paths from any blob of text.
-
-Usage:
-  pathfish [file] [options]
-  cat [file] | pathfish [options]
-
-Options:
-  --format <format>  Output format: json, yaml, list (default: json)
-  --pretty           Pretty-print JSON output (default: true)
-  --absolute         Convert all paths to absolute
-  --cwd <dir>        Base directory for resolving paths (default: process.cwd())
-  --no-verify        Do not filter out paths that do not exist on disk
-  --copy             Copy the final output to the clipboard
-  --help, -h         Show this help message
-  --version, -v      Show version number
-`;
-
-type CliArgs = {
-  _: string[];
-  help?: boolean;
-  version?: boolean;
-  pretty?: boolean;
-  absolute?: boolean;
-  verify?: boolean; // mri sets this to false for --no-verify
-  copy?: boolean;
-  format?: string;
-  cwd?: string;
-};
+      src/services/fs.service.ts:42:32
+        42 const updateGitignore = async (cwd: string): Promise<{ created: boolean, updated: boolean }> => {
+                                          ~~~~~~~~~~~
+        An argument for 'cwd' was not provided.
 
 
-/**
- * Main CLI entry point.
- * This function orchestrates the entire process from argument parsing to final output.
- */
-async function run() {
-  const args: CliArgs = mri(process.argv.slice(2), {
-    boolean: ['help', 'version', 'pretty', 'absolute', 'copy'],
-    string: ['format', 'cwd'],
-    alias: { h: 'help', v: 'version' },
-    default: {
-      pretty: true,
-      format: 'json',
-    },
-  });
-
-  if (args.help) {
-    console.log(HELP_TEXT);
-    return;
-  }
-
-  if (args.version) {
-    console.log(`v${version}`);
-    return;
-  }
-
-  const inputFile = args._[0];
-  let inputText: string;
-
-  try {
-    inputText = inputFile
-      ? await Bun.file(path.resolve(args.cwd || process.cwd(), inputFile)).text()
-      : await Bun.stdin.text();
-  } catch (err) {
-    throw err;
-  }
-
-  // Map CLI arguments to engine pipeline options.
-  const options: PipelineOptions = {
-    absolute: args.absolute,
-    cwd: args.cwd,
-    verify: args.verify !== false, // Default to true, false only on --no-verify
-    format: args.format as Format,
-    pretty: args.pretty,
-  };
-
-  
-  const result = await runPipeline(inputText, options);
-  console.log(result);
-
-  // Copying is a side effect that happens after the result is ready.
-  if (args.copy) await copyToClipboard(result);
-}
-
-run().catch(err => {
-  const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-  process.stderr.write(`Error: ${errorMessage}\n`);
-  process.exit(1);
-});
+    Found 5 errors.
+  expected:
+    - "src/components/SettingsScreen.tsx"
+    - "src/hooks/useDebugMenu.tsx"
+    - "src/stores/init.store.ts"
+    - "src/services/copy.service.ts"
+    - "src/services/init.service.ts"
+    - "src/services/fs.service.ts"
 ````
 
 ## File: test/e2e/cli.test.ts
 ````typescript
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import path from 'node:path';
+// import path from 'node:path';
 import {
   runCli,
   loadYamlFixture,
@@ -1322,9 +1299,136 @@ describe('cli.ts (E2E)', async () => {
 });
 ````
 
+## File: src/cli.ts
+````typescript
+#!/usr/bin/env node
+
+import mri from 'mri';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { runPipeline, type PipelineOptions } from './engine';
+import { copyToClipboard, type Format } from './utils';
+import { readFileSync } from 'node:fs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+let version = '0.1.6';
+
+try {
+  // Try to read from package.json in the same directory (for published packages)
+  const { version: pkgVersion } = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
+  version = pkgVersion;
+} catch {
+  try {
+    // Fallback to parent directory (for development)
+    const { version: pkgVersion } = JSON.parse(readFileSync(path.join(__dirname, '../package.json'), 'utf-8'));
+    version = pkgVersion;
+  } catch {
+    // Ultimate fallback
+    version = '0.1.6';
+  }
+}
+
+const HELP_TEXT = `
+pathfish v${version}
+Fuzzy-extract file paths from any blob of text.
+
+Usage:
+  pathfish [file] [options]
+  cat [file] | pathfish [options]
+
+Options:
+  --format <format>  Output format: json, yaml, list (default: json)
+  --pretty           Pretty-print JSON output (default: true)
+  --absolute         Convert all paths to absolute
+  --cwd <dir>        Base directory for resolving paths (default: process.cwd())
+  --no-verify        Do not filter out paths that do not exist on disk
+  --copy             Copy the final output to the clipboard
+  --help, -h         Show this help message
+  --version, -v      Show version number
+`;
+
+type CliArgs = {
+  _: string[];
+  help?: boolean;
+  version?: boolean;
+  pretty?: boolean;
+  absolute?: boolean;
+  verify?: boolean; // mri sets this to false for --no-verify
+  copy?: boolean;
+  format?: string;
+  cwd?: string;
+};
+
+
+/**
+ * Main CLI entry point.
+ * This function orchestrates the entire process from argument parsing to final output.
+ */
+async function run() {
+  const args: CliArgs = mri(process.argv.slice(2), {
+    boolean: ['help', 'version', 'pretty', 'absolute', 'copy'],
+    string: ['format', 'cwd'],
+    alias: { h: 'help', v: 'version' },
+    default: {
+      pretty: true,
+      format: 'json',
+    },
+  });
+
+  if (args.help) {
+    console.log(HELP_TEXT);
+    return;
+  }
+
+  if (args.version) {
+    console.log(`v${version}`);
+    return;
+  }
+
+  const inputFile = args._[0];
+  let inputText: string;
+
+  try {
+    inputText = inputFile
+      ? readFileSync(path.resolve(args.cwd || process.cwd(), inputFile), 'utf-8')
+      : await new Promise((resolve, reject) => {
+          let data = '';
+          process.stdin.on('data', chunk => data += chunk);
+          process.stdin.on('end', () => resolve(data));
+          process.stdin.on('error', reject);
+        });
+  } catch (err) {
+    throw err;
+  }
+
+  // Map CLI arguments to engine pipeline options.
+  const options: PipelineOptions = {
+    absolute: args.absolute,
+    cwd: args.cwd,
+    verify: args.verify !== false, // Default to true, false only on --no-verify
+    format: args.format as Format,
+    pretty: args.pretty,
+  };
+
+  
+  const result = await runPipeline(inputText, options);
+  console.log(result);
+
+  // Copying is a side effect that happens after the result is ready.
+  if (args.copy) await copyToClipboard(result);
+}
+
+run().catch(err => {
+  const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+  process.stderr.write(`Error: ${errorMessage}\n`);
+  process.exit(1);
+});
+````
+
 ## File: src/core.ts
 ````typescript
 import path from 'node:path';
+import { promises as fs } from 'node:fs';
 
 /**
  * Options for path extraction.
@@ -1381,6 +1485,9 @@ const PATH_REGEX = new RegExp(
     // Quoted paths with spaces (must come first to allow spaces)
     /(?:"[^"]*[\\\/][^"]*"|'[^']*[\\\/][^']*')/.source,
 
+    // Parenthesized paths with spaces: (src/components/Button (new).tsx)
+    /\([^,)]*[\\\/][^,)]*\([^)]*\)[^,)]*\.[a-zA-Z0-9]+\)/.source,
+
     // Windows UNC paths: \\server\share\file (must come before absolute)
     /[\\\/]{2}[^\s\n]+[\\\/][^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
 
@@ -1388,16 +1495,18 @@ const PATH_REGEX = new RegExp(
     /[a-zA-Z]:[\\\/][^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
 
     // Unix absolute paths: /path/to/file
-    /\/[^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+    /\/[^\s\n"']+(?:[\\\/][^\s\n"']+)*/.source,
 
     // Relative paths with separators: ./file, ../file, src/file
-    /(?:\.[\\/]|[^\s\n]+[\\/])[^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+    /(?:\.[\\/]|[^\s\n"']+[\\/])[^\s\n"']+(?:[\\\/][^\s\n"']+)*/.source,
 
-    // Standalone filenames with extensions: file.txt, README.md.
-    // It avoids matching email domains and parts of URLs by using a negative
-    // lookbehind for '@', 'http://', 'https://', and '//'. It also prevents slashes in the filename
-    // part to avoid overlapping with the relative path regex.
-    /(?<!@|https?:\/\/|\/\/)\b[^\s\n\\/]+\.[a-zA-Z0-9]+\b/.source,
+    // Same as above, but uses a lookbehind to allow leading whitespace (for indented paths in logs)
+    /(?<=\s)(?:\.[\\/]|[^\s\n"']+[\\/])[^\s\n"']+(?:[\\\/][^\s\n"']+)*/.source,
+
+    // Standalone filenames with extensions: file.txt, README.md, my.component.test.js.
+    // Use negative lookbehind to avoid email domains and URL contexts
+    // Supports multi-dot filenames like my.component.test.js
+    /(?<!@|https?:\/\/[^\s]*)\b[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,}\b(?!\s*@)(?![^"]*")/.source,
 
     // Common filenames without extensions
     /\b(?:Dockerfile|Makefile|Jenkinsfile|Vagrantfile)\b/.source,
@@ -1418,19 +1527,39 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
     // 1. Find all potential paths using the regex.
     const matches = Array.from(text.matchAll(PATH_REGEX), m => m[0]);
 
-    // 2. Clean up matches: remove trailing line/col numbers and common punctuation.
-    const cleanedPaths = matches.map(p => {
+    // 2. Extract valid paths from potentially malformed matches
+    const extractedPaths: string[] = [];
+    for (const match of matches) {
+      // If the match contains line breaks, it might contain multiple paths
+      if (match.includes('\n')) {
+        // Extract individual file paths from multiline strings
+        const pathPattern = /[a-zA-Z0-9_./\\-]+(?:\/[a-zA-Z0-9_.-]+)*\.[a-zA-Z0-9]{1,5}(?::\d+(?::\d+)?)?/gm;
+        const pathMatches = match.match(pathPattern);
+        if (pathMatches) {
+          extractedPaths.push(...pathMatches.map(p => p.trim()));
+        }
+      } else {
+        extractedPaths.push(match);
+      }
+    }
+
+    // 3. Clean up matches: remove trailing line/col numbers and common punctuation.
+    const cleanedPaths = extractedPaths.map(p => {
       let path = p;
 
-      // Remove line/column numbers
-      path = path.replace(/(?::\d+)+$/, '');
+      // Remove line/column numbers and other trailing noise.
+      // Handles: :5:10, (5,10), :5, :5:, (5,10):
+      path = path.replace(/[:(]\d+(?:[.,:]\d+)*\)?[:]?$/, '');
 
       // Remove query strings and fragments
       path = path.replace(/[?#].*$/, '');
 
-      // Special handling for quoted paths with parentheses
+      // Special handling for quoted paths and parentheses
       if ((path.startsWith('"') && path.endsWith('"')) ||
           (path.startsWith("'") && path.endsWith("'"))) {
+        path = path.slice(1, -1);
+      } else if (path.startsWith('(') && path.endsWith(')')) {
+        // Remove outer parentheses from parenthesized paths
         path = path.slice(1, -1);
       } else {
         // For non-quoted paths, be more careful about punctuation
@@ -1443,9 +1572,18 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
         path = path.replace(/\\\\/g, '\\');
       }
 
-      // Normalize UNC paths to single slash if they appear in URLs
+      // Handle UNC paths intelligently - preserve file shares, normalize URL paths
       if (path.startsWith('//') && !path.startsWith('\\\\')) {
-        path = path.substring(1);
+        // If it has a file extension, it's likely a file path that should be normalized
+        // If it doesn't have an extension and has only 2 segments, it's likely a UNC share
+        const hasExtension = /\.[a-zA-Z0-9]{1,5}$/.test(path);
+        const segments = path.split('/').filter(s => s.length > 0);
+        
+        if (hasExtension || segments.length > 2) {
+          // This looks like a file path, convert //server/file.txt to /server/file.txt
+          path = path.substring(1);
+        }
+        // Otherwise keep as UNC share like //server/share
       }
 
       // Remove URL scheme and domain if present
@@ -1459,36 +1597,65 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
       return path;
     });
 
-    // 3. Filter out commonly ignored paths (e.g., node_modules).
+    // 4. Filter out commonly ignored paths (e.g., node_modules).
     const filteredPaths = cleanedPaths.filter(p => !isIgnored(p));
 
-    // 4. Filter out version numbers and other non-path patterns
+    // 5. Filter out version numbers and other non-path patterns
     const versionPattern = /^[a-zA-Z]?v?\d+(?:\.\d+)*$/;
     const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
     const hashPattern = /^[a-f0-9]{7,40}$/i;
     const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    const urlDomainPattern = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/; // Only filter pure domains, not paths
+    // const urlDomainPattern = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/; // Only filter pure domains, not paths
 
   const validPaths = filteredPaths.filter(p => {
-      // Check if this is actually a filename with extension vs a pure domain
-      const isFilenameWithExtension = /[a-zA-Z0-9]-[a-zA-Z0-9.]*\.[a-zA-Z0-9]+/.test(p) ||
-                                     /\.[a-zA-Z0-9]{2,}$/.test(p) && !/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(p.replace(/\.[a-zA-Z0-9]+$/, ''));
+      // Filter out multi-line strings and very long strings
+      if (p.includes('\n') || p.length > 200) {
+        return false;
+      }
+      
+      // Filter out function calls and method names specifically
+      if (p.includes('.') && !p.includes('/') && !p.includes('\\')) {
+        // This could be a function call like 'initActions.setAnalysisResults'
+        // But keep actual filenames like 'file.txt'
+        const parts = p.split('.');
+        if (parts.length > 1) {
+          const lastPart = parts[parts.length - 1];
+          // If the last part doesn't look like a file extension, it's probably a function call
+          if (!/^[a-zA-Z0-9]{1,5}$/.test(lastPart || '') ||
+              ['setAnalysisResults', 'updateGitignore'].includes(lastPart || '')) {
+            return false;
+          }
+        }
+      }
+      
+      // Filter out import statements and module references that appear in TypeScript errors
+      if (p.startsWith('"') && p.endsWith('"')) {
+        // Always filter quoted strings - they're usually import paths in error messages
+        return false;
+      }
+      
+      // Filter out relative import module references without file extensions
+      if ((p.startsWith('./') || p.startsWith('../')) && !p.includes(' ')) {
+        // If it doesn't have a file extension and is short, it's likely a module import
+        if (!/\.[a-zA-Z0-9]{1,5}$/.test(p) && p.split('/').length <= 3) {
+          return false;
+        }
+      }
 
       return !versionPattern.test(p) &&
              !uuidPattern.test(p) &&
              !hashPattern.test(p) &&
              !emailPattern.test(p) &&
-             (!urlDomainPattern.test(p) || isFilenameWithExtension) &&
              p.trim() !== '';
     });
 
-    // 5. Fix split paths that contain parentheses
+    // 6. Fix split paths that contain parentheses
     const fixedPaths = fixSplitPaths(validPaths);
 
-    // 6. (Optional) Filter for unique paths.
+    // 7. (Optional) Filter for unique paths.
     const uniquePaths = unique ? Array.from(new Set(fixedPaths)) : fixedPaths;
 
-    // 7. (Optional) Resolve paths to be absolute.
+    // 8. (Optional) Resolve paths to be absolute.
     const resolvedPaths = absolute
       ? uniquePaths.map(p => path.resolve(cwd, p))
       : uniquePaths;
@@ -1511,8 +1678,8 @@ function fixSplitPaths(paths: string[]): string[] {
 
     // Check if current path starts with '(' and next path ends with ')'
     if (i < paths.length - 1 &&
-        (current.startsWith('(') || current.endsWith('(')) &&
-        paths[i + 1].match(/\).*\.[a-zA-Z0-9]+$/)) {
+        current && (current.startsWith('(') || current.endsWith('(')) &&
+        paths[i + 1] && paths[i + 1]!.match(/\).*\.[a-zA-Z0-9]+$/)) {
       // Combine the paths and clean up
       let combined = current + ' ' + paths[i + 1];
 
@@ -1526,7 +1693,7 @@ function fixSplitPaths(paths: string[]): string[] {
       result.push(combined);
       i += 2; // Skip the next path as we've already consumed it
     } else {
-      result.push(current);
+      result.push(current || '');
       i++;
     }
   }
@@ -1553,9 +1720,14 @@ export function extractPaths(text: string, opts: Options = {}): string[] {
  */
 export async function verifyPaths(paths: string[], cwd: string = process.cwd()): Promise<string[]> {
   // Concurrently check for the existence of each file.
-  const checks = paths.map(p => {
+  const checks = paths.map(async p => {
     const absolutePath = path.isAbsolute(p) ? p : path.resolve(cwd, p);
-    return Bun.file(absolutePath).exists();
+    try {
+      await fs.access(absolutePath);
+      return true;
+    } catch {
+      return false;
+    }
   });
   const existenceChecks = await Promise.all(checks);
 
@@ -1563,5 +1735,46 @@ export async function verifyPaths(paths: string[], cwd: string = process.cwd()):
   const existingPaths = paths.filter((_, i) => existenceChecks[i]);
 
   return existingPaths;
+}
+````
+
+## File: package.json
+````json
+{
+  "name": "pathfish",
+  "version": "0.1.6",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "pathfish": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "clipboardy": "^4.0.0",
+    "js-yaml": "^4.1.0",
+    "mri": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/js-yaml": "^4.0.9",
+    "@types/mri": "^1.1.5",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
+    "eslint": "^9.36.0",
+    "tsup": "^8.5.0"
+  },
+  "scripts": {
+    "test": "bun run build && bun test test",
+    "build": "tsup",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
 }
 ````

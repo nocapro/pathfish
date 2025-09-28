@@ -57,9 +57,9 @@ export async function runCli(
   stdinInput?: string,
   cwd?: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
+  const cliPath = path.resolve(process.cwd(), 'dist/cli.js');
 
-  const proc = Bun.spawn(['bun', 'run', cliPath, ...args], {
+  const proc = Bun.spawn(['bun', cliPath, ...args], {
     stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
     cwd,
     stderr: 'pipe',

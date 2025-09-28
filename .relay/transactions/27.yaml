@@ -1,0 +1,431 @@
+uuid: 44439169-2321-487b-a029-4d2bb2d9c490
+projectId: pathfish
+createdAt: '2025-09-28T16:03:31.209Z'
+gitCommitMsg: >-
+  test: run tests against compiled dist output
+
+  This commit refactors the testing setup to execute all tests against the
+  compiled JavaScript files in the `dist/` directory, rather than the TypeScript
+  source files in `src/`.
+
+  Key changes: - The `test` script in `package.json` now runs `build` first. -
+  The `runCli` test utility now executes `dist/cli.js`. - All test file imports
+  now point to modules within `dist/`, using the
+    `.js` extension for ESM compatibility.
+
+  This ensures that the code being tested is the same as the code that will be
+  published, verifying the build process and package structure.
+promptSummary: >-
+  I want to modify my tests to use the compiled dist output instead of the src
+  files.
+reasoning:
+  - >-
+    This is an excellent request. Running tests against the compiled output in
+    `dist/` rather than the source `src/` is a best practice. It ensures that
+    your build process is working correctly and that the code being shipped is
+    the code being tested.
+  - 'Here are the steps to make this change:'
+  - >-
+    1.  **Update `package.json`**: Modify the `test` script to automatically
+    build the project before running tests. This guarantees that `dist/` is
+    always up-to-date.
+  - >-
+    2.  **Update `test/test.utils.ts`**: Modify the `runCli` helper function to
+    execute the compiled `dist/cli.js` with `bun` instead of using `bun run` on
+    the source `src/cli.ts`.
+  - >-
+    3.  **Update Integration Tests**: Change the import in
+    `test/integration/engine.test.ts` to point to the compiled `dist/engine.js`
+    module. We'll add the `.js` extension, which is required for ESM
+    compatibility.
+  - '4.  **Update Unit Tests**:'
+  - >-
+    *   In `test/unit/core.test.ts`, update the import to use the public API
+    from `dist/index.js`.
+  - >-
+    *   In `test/unit/utils.test.ts`, update the import to test the internal
+    utility from `dist/utils.js`.
+  - >-
+    These changes will comprehensively switch your testing strategy to target
+    the production build artifacts.
+  - '### 1. Modify `package.json` to build before testing'
+  - >-
+    I'll prepend the `test` script with `bun run build &&` to ensure a fresh
+    build is available before any tests are executed.
+  - '### 2. Update the CLI test runner in `test.utils.ts`'
+  - >-
+    The `runCli` helper will now execute the compiled JavaScript bundle in
+    `dist/cli.js` directly with `bun`, instead of having Bun transpile the
+    TypeScript source file on the fly.
+  - '### 3. Update integration test imports'
+  - >-
+    I'll change the import in the engine integration test to pull from the
+    compiled file in `dist/`.
+  - '### 4. Update unit test imports'
+  - >-
+    Finally, I'll update the unit tests to import from their respective compiled
+    modules in `dist/`, ensuring we are testing what will be published.
+operations:
+  - type: write
+    path: package.json
+    content: |+
+      --- package.json
+      +++ package.json
+      @@ -27,7 +27,7 @@
+           "tsup": "^8.5.0"
+         },
+         "scripts": {
+      -    "test": "bun test test",
+      +    "test": "bun run build && bun test test",
+           "build": "tsup",
+           "lint": "eslint .",
+           "typecheck": "tsc --noEmit",
+
+    patchStrategy: standard-diff
+  - type: write
+    path: test/test.utils.ts
+    content: |+
+      --- test/test.utils.ts
+      +++ test/test.utils.ts
+      @@ -53,9 +53,9 @@
+         stdinInput?: string,
+         cwd?: string,
+       ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+      -  const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
+      +  const cliPath = path.resolve(process.cwd(), 'dist/cli.js');
+       
+      -  const proc = Bun.spawn(['bun', 'run', cliPath, ...args], {
+      +  const proc = Bun.spawn(['bun', cliPath, ...args], {
+           stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
+           cwd,
+           stderr: 'pipe',
+
+    patchStrategy: standard-diff
+  - type: write
+    path: test/integration/engine.test.ts
+    content: |
+      <<<<<<< SEARCH
+      import { runPipeline, type PipelineOptions } from '../../src/engine';
+      =======
+      import { runPipeline, type PipelineOptions } from '../../dist/engine.js';
+      >>>>>>> REPLACE
+    patchStrategy: search-replace
+  - type: write
+    path: test/unit/core.test.ts
+    content: >
+      <<<<<<< SEARCH
+
+      import { extractPaths, verifyPaths, type Options } from '../../src/core';
+
+      =======
+
+      import { extractPaths, verifyPaths, type Options } from
+      '../../dist/index.js';
+
+      >>>>>>> REPLACE
+    patchStrategy: search-replace
+  - type: write
+    path: test/unit/utils.test.ts
+    content: |
+      <<<<<<< SEARCH
+      import { createFormatter, type Format } from '../../src/utils';
+      =======
+      import { createFormatter, type Format } from '../../dist/utils.js';
+      >>>>>>> REPLACE
+    patchStrategy: search-replace
+snapshot:
+  package.json: |
+    {
+      "name": "pathfish",
+      "version": "0.1.6",
+      "main": "dist/index.js",
+      "module": "dist/index.js",
+      "type": "module",
+      "bin": {
+        "pathfish": "dist/cli.js"
+      },
+      "files": [
+        "dist"
+      ],
+      "dependencies": {
+        "clipboardy": "^4.0.0",
+        "js-yaml": "^4.1.0",
+        "mri": "^1.2.0"
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@types/js-yaml": "^4.0.9",
+        "@types/mri": "^1.1.5",
+        "@typescript-eslint/eslint-plugin": "^8.44.1",
+        "@typescript-eslint/parser": "^8.44.1",
+        "eslint": "^9.36.0",
+        "tsup": "^8.5.0"
+      },
+      "scripts": {
+        "test": "bun test test",
+        "build": "tsup",
+        "lint": "eslint .",
+        "typecheck": "tsc --noEmit",
+        "prepublishOnly": "bun run build"
+      },
+      "peerDependencies": {
+        "typescript": "^5"
+      }
+    }
+  test/test.utils.ts: |-
+    import { file } from 'bun';
+    import fs from 'node:fs/promises';
+    import path from 'node:path';
+    import os from 'node:os';
+    import yaml from 'js-yaml';
+
+    /**
+     * Loads and parses a YAML fixture file.
+     * @param filePath The path to the YAML file, relative to the `test` directory.
+     * @returns The parsed data from the YAML file.
+     */
+    export async function loadYamlFixture<T = unknown>(
+      filePath: string,
+    ): Promise<T> {
+      const absolutePath = path.resolve(process.cwd(), 'test', filePath);
+      const fileContent = await file(absolutePath).text();
+      return yaml.load(fileContent) as T;
+    }
+
+    /**
+     * Creates a temporary directory and populates it with the specified files.
+     * @param files A map where keys are relative file paths and values are their content.
+     * @returns The absolute path to the created temporary directory.
+     */
+    export async function setupTestDirectory(files: {
+      [path: string]: string;
+    }): Promise<string> {
+      const tempDir = await fs.mkdtemp(
+        path.join(os.tmpdir(), 'pathfish-test-'),
+      );
+
+      for (const [filePath, content] of Object.entries(files)) {
+        const absolutePath = path.join(tempDir, filePath);
+        await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+        await fs.writeFile(absolutePath, content);
+      }
+      return tempDir;
+    }
+
+    /**
+     * Recursively removes a directory.
+     * @param dirPath The absolute path to the directory to remove.
+     */
+    export async function cleanupTestDirectory(dirPath: string): Promise<void> {
+      await fs.rm(dirPath, { recursive: true, force: true });
+    }
+
+    /**
+     * Executes the CLI in a separate process.
+     * @param args An array of command-line arguments.
+     * @param stdinInput An optional string to pipe to the process's stdin.
+     * @param cwd The working directory for the spawned process.
+     * @returns A promise that resolves with the process's stdout, stderr, and exit code.
+     */
+    export async function runCli(
+      args: string[],
+      stdinInput?: string,
+      cwd?: string,
+    ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+      const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
+
+      const proc = Bun.spawn(['bun', 'run', cliPath, ...args], {
+        stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
+        cwd,
+        stderr: 'pipe',
+        stdout: 'pipe',
+      });
+
+      const exitCode = await proc.exited;
+      const stdout = await new Response(proc.stdout).text();
+      const stderr = await new Response(proc.stderr).text();
+
+      return { stdout, stderr, exitCode };
+    }
+  test/integration/engine.test.ts: |-
+    import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+    import { runPipeline, type PipelineOptions } from '../../src/engine';
+    import {
+      loadYamlFixture,
+      setupTestDirectory,
+      cleanupTestDirectory,
+    } from '../test.utils';
+
+    type EngineTestCase = {
+      name: string;
+      options: PipelineOptions;
+      input: string;
+      files: { [path: string]: string };
+      expected: string;
+    };
+
+    describe('engine.ts (Integration)', async () => {
+      const fixtures = await loadYamlFixture<EngineTestCase[]>('integration/engine.fixtures.yaml');
+
+      describe('runPipeline', () => {
+        // Use a separate describe block for each test case to avoid closure issues
+        fixtures.forEach(({ name, options, input, files, expected }) => {
+          describe(name, () => {
+            let tempDir: string;
+
+            beforeEach(async () => {
+              tempDir = await setupTestDirectory(files);
+            });
+
+            afterEach(async () => {
+              await cleanupTestDirectory(tempDir);
+            });
+
+            it('should execute correctly', async () => {
+              // Use the temp directory as the CWD for the pipeline
+              const result = await runPipeline(input, { ...options, cwd: tempDir });
+
+              // Replace placeholder in expected output with the actual temp dir path
+              const expectedWithCwd = expected.replaceAll('{{CWD}}', tempDir).trim();
+
+              expect(result.trim()).toEqual(expectedWithCwd);
+            });
+          });
+        });
+      });
+    });
+  test/unit/core.test.ts: |-
+    import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+    import path from 'node:path';
+    import { extractPaths, verifyPaths, type Options } from '../../src/core';
+    import {
+      loadYamlFixture,
+      setupTestDirectory,
+      cleanupTestDirectory,
+    } from '../test.utils';
+
+    type ExtractPathsTestCase = {
+      name: string;
+      options: Options;
+      input: string;
+      expected: string[];
+    };
+
+    describe('core.ts', () => {
+      describe('extractPaths', async () => {
+        const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
+
+        for (const { name, options, input, expected } of fixtures) {
+          it(name, () => {
+            const result = extractPaths(input, options);
+            // Sort for stable comparison
+            expect(result.sort()).toEqual(expected.sort());
+          });
+        }
+      });
+
+      describe('verifyPaths', () => {
+        let tempDir: string;
+        const testFiles = {
+          'file1.txt': 'hello',
+          'dir/file2.js': 'content',
+          'dir/subdir/file3.json': '{}',
+        };
+
+        beforeEach(async () => {
+          tempDir = await setupTestDirectory(testFiles);
+        });
+
+        afterEach(async () => {
+          await cleanupTestDirectory(tempDir);
+        });
+
+        it('should return only paths that exist on disk', async () => {
+          const pathsToCheck = [
+            path.join(tempDir, 'file1.txt'), // exists
+            path.join(tempDir, 'dir/file2.js'), // exists
+            path.join(tempDir, 'non-existent.txt'), // does not exist
+            path.join(tempDir, 'dir/subdir/another.json'), // does not exist
+          ];
+
+          const expected = [
+            path.join(tempDir, 'file1.txt'),
+            path.join(tempDir, 'dir/file2.js'),
+          ];
+
+          const result = await verifyPaths(pathsToCheck, tempDir);
+          expect(result.sort()).toEqual(expected.sort());
+        });
+
+        it('should return an empty array if no paths exist', async () => {
+          const pathsToCheck = [
+            path.join(tempDir, 'foo.txt'),
+            path.join(tempDir, 'bar.js'),
+          ];
+          const result = await verifyPaths(pathsToCheck, tempDir);
+          expect(result).toEqual([]);
+        });
+
+        it('should return an empty array for empty input', async () => {
+          const result = await verifyPaths([], tempDir);
+          expect(result).toEqual([]);
+        });
+      });
+    });
+  test/unit/utils.test.ts: |-
+    import { describe, it, expect } from 'bun:test';
+    import { createFormatter, type Format } from '../../src/utils';
+    import { loadYamlFixture } from '../test.utils';
+
+    type FormatterTestCase = {
+      name: string;
+      format: Format;
+      pretty: boolean;
+      input: string[];
+      expected: string;
+    };
+
+    type FormatterFixture = (
+      | FormatterTestCase
+      | { name: string; cases: FormatterTestCase[] }
+    )[];
+
+    describe('createFormatter', async () => {
+      it('should throw an error for an unknown format', () => {
+        // This is a type-level check, but we test the runtime guard
+        const badFormat = 'xml' as unknown as Format;
+        expect(() => createFormatter(badFormat, true)).toThrow(
+          'Unknown format: xml',
+        );
+      });
+
+      const fixtures = await loadYamlFixture<FormatterFixture>('unit/utils.fixtures.yaml');
+
+      for (const fixture of fixtures) {
+        if ('cases' in fixture) {
+          describe(fixture.name, () => {
+            for (const testCase of fixture.cases) {
+              it(`should format as ${testCase.format}`, () => {
+                const format = createFormatter(testCase.format, testCase.pretty);
+                const result = format(testCase.input);
+                expect(result.trim()).toEqual(testCase.expected.trim());
+              });
+            }
+          });
+        } else {
+          it(fixture.name, () => {
+            const format = createFormatter(fixture.format, fixture.pretty);
+            const result = format(fixture.input);
+            // Use trim to handle potential trailing newlines from YAML multiline strings
+            expect(result.trim()).toEqual(fixture.expected.trim());
+          });
+        }
+      }
+    });
+approved: true
+linesAdded: null
+linesRemoved: null
+linesDifference: null
+gitCommittedAt: null
+status: committed
+id: 27

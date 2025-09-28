@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import path from 'node:path';
-import { extractPaths, verifyPaths, type Options } from '../../src/core';
+import { extractPaths, verifyPaths, type Options } from '../../dist/index.js';
 import {
   loadYamlFixture,
   setupTestDirectory,

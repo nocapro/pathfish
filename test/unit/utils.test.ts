@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { createFormatter, type Format } from '../../src/utils';
+import { createFormatter, type Format } from '../../dist/utils.js';
 import { loadYamlFixture } from '../test.utils';
 
 type FormatterTestCase = {

@@ -71,6 +71,9 @@ const PATH_REGEX = new RegExp(
     // Relative paths with separators: ./file, ../file, src/file
     /(?:\.[\\/]|[^\s\n"']+[\\/])[^\s\n"']+(?:[\\\/][^\s\n"']+)*/.source,
 
+    // Same as above, but uses a lookbehind to allow leading whitespace (for indented paths in logs)
+    /(?<=\s)(?:\.[\\/]|[^\s\n"']+[\\/])[^\s\n"']+(?:[\\\/][^\s\n"']+)*/.source,
+
     // Standalone filenames with extensions: file.txt, README.md, my.component.test.js.
     // Use negative lookbehind to avoid email domains and URL contexts
     // Supports multi-dot filenames like my.component.test.js
@@ -115,8 +118,9 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
     const cleanedPaths = extractedPaths.map(p => {
       let path = p;
 
-      // Remove line/column numbers
-      path = path.replace(/(?::\d+)+$/, '');
+      // Remove line/column numbers and other trailing noise.
+      // Handles: :5:10, (5,10), :5, :5:, (5,10):
+      path = path.replace(/[:(]\d+(?:[.,:]\d+)*\)?[:]?$/, '');
 
       // Remove query strings and fragments
       path = path.replace(/[?#].*$/, '');
