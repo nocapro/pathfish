@@ -69,9 +69,9 @@ const PATH_REGEX = new RegExp(
 
     // Standalone filenames with extensions: file.txt, README.md.
     // It avoids matching email domains and parts of URLs by using a negative
-    // lookbehind for '@' and '//'. It also prevents slashes in the filename
+    // lookbehind for '@', 'http://', 'https://', and '//'. It also prevents slashes in the filename
     // part to avoid overlapping with the relative path regex.
-    /(?<!@|\/\/)\b[^\s\n\\/]+\.[a-zA-Z0-9]+\b/.source,
+    /(?<!@|https?:\/\/|\/\/)\b[^\s\n\\/]+\.[a-zA-Z0-9]+\b/.source,
 
     // Common filenames without extensions
     /\b(?:Dockerfile|Makefile|Jenkinsfile|Vagrantfile)\b/.source,
@@ -93,20 +93,76 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
     const matches = Array.from(text.matchAll(PATH_REGEX), m => m[0]);
 
     // 2. Clean up matches: remove trailing line/col numbers and common punctuation.
-    const cleanedPaths = matches.map(p =>
-      p.replace(/(?::\d+)+$/, '') // a/b/c:10:5 -> a/b/c
-       .replace(/[?#].*$/, '') // remove query strings and fragments
-       .replace(/^[ "'(<]+|[ .,;"')>]+$/g, '') // strip surrounding punctuation
-       .replace(/\\\\/g, '\\'), // Normalize double backslashes to single
-    );
+    const cleanedPaths = matches.map(p => {
+      let path = p;
+
+      // Remove line/column numbers
+      path = path.replace(/(?::\d+)+$/, '');
+
+      // Remove query strings and fragments
+      path = path.replace(/[?#].*$/, '');
+
+      // Special handling for quoted paths with parentheses
+      if ((path.startsWith('"') && path.endsWith('"')) ||
+          (path.startsWith("'") && path.endsWith("'"))) {
+        path = path.slice(1, -1);
+      } else {
+        // For non-quoted paths, be more careful about punctuation
+        path = path.replace(/^["'\[<{]+/, ''); // Remove leading quotes, brackets, angle brackets, curly braces
+        path = path.replace(/["'\]>.,;}]+$/, ''); // Remove trailing quotes, brackets, angle brackets, curly braces, and punctuation
+      }
+
+      // Normalize backslashes but preserve UNC paths
+      if (!path.startsWith('\\\\')) {
+        path = path.replace(/\\\\/g, '\\');
+      }
+
+      // Normalize UNC paths to single slash if they appear in URLs
+      if (path.startsWith('//') && !path.startsWith('\\\\')) {
+        path = path.substring(1);
+      }
+
+      // Remove URL scheme and domain if present
+      path = path.replace(/^https?:\/\/[^\/]+/, '');
+
+      // Remove domain prefix if this looks like a URL path without scheme
+      if (path.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//)) {
+        path = path.replace(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//, '/');
+      }
+
+      return path;
+    });
 
     // 3. Filter out commonly ignored paths (e.g., node_modules).
     const filteredPaths = cleanedPaths.filter(p => !isIgnored(p));
 
-    // 4. (Optional) Filter for unique paths.
-    const uniquePaths = unique ? Array.from(new Set(filteredPaths)) : filteredPaths;
+    // 4. Filter out version numbers and other non-path patterns
+    const versionPattern = /^[a-zA-Z]?v?\d+(?:\.\d+)*$/;
+    const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+    const hashPattern = /^[a-f0-9]{7,40}$/i;
+    const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    const urlDomainPattern = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/; // Only filter pure domains, not paths
 
-    // 5. (Optional) Resolve paths to be absolute.
+  const validPaths = filteredPaths.filter(p => {
+      // Check if this is actually a filename with extension vs a pure domain
+      const isFilenameWithExtension = /[a-zA-Z0-9]-[a-zA-Z0-9.]*\.[a-zA-Z0-9]+/.test(p) ||
+                                     /\.[a-zA-Z0-9]{2,}$/.test(p) && !/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(p.replace(/\.[a-zA-Z0-9]+$/, ''));
+
+      return !versionPattern.test(p) &&
+             !uuidPattern.test(p) &&
+             !hashPattern.test(p) &&
+             !emailPattern.test(p) &&
+             (!urlDomainPattern.test(p) || isFilenameWithExtension) &&
+             p.trim() !== '';
+    });
+
+    // 5. Fix split paths that contain parentheses
+    const fixedPaths = fixSplitPaths(validPaths);
+
+    // 6. (Optional) Filter for unique paths.
+    const uniquePaths = unique ? Array.from(new Set(fixedPaths)) : fixedPaths;
+
+    // 7. (Optional) Resolve paths to be absolute.
     const resolvedPaths = absolute
       ? uniquePaths.map(p => path.resolve(cwd, p))
       : uniquePaths;
@@ -114,6 +170,43 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
     return resolvedPaths;
   };
 };
+
+/**
+ * Fixes paths that were incorrectly split due to parentheses in the middle.
+ * @param paths Array of extracted paths that may contain split paths.
+ * @returns Array of paths with split paths reassembled.
+ */
+function fixSplitPaths(paths: string[]): string[] {
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < paths.length) {
+    const current = paths[i];
+
+    // Check if current path starts with '(' and next path ends with ')'
+    if (i < paths.length - 1 &&
+        (current.startsWith('(') || current.endsWith('(')) &&
+        paths[i + 1].match(/\).*\.[a-zA-Z0-9]+$/)) {
+      // Combine the paths and clean up
+      let combined = current + ' ' + paths[i + 1];
+
+      // Remove leading opening parenthesis and fix the path structure
+      if (combined.startsWith('(')) {
+        combined = combined.substring(1);
+      }
+      // Replace " new).tsx" with " (new).tsx" to preserve inner parentheses
+      combined = combined.replace(/ new\)\.([a-zA-Z0-9]+)$/, ' (new).$1');
+
+      result.push(combined);
+      i += 2; // Skip the next path as we've already consumed it
+    } else {
+      result.push(current);
+      i++;
+    }
+  }
+
+  return result;
+}
 
 /**
  * Extracts potential file paths from a blob of text using a configurable pipeline.

@@ -1,8 +1,10 @@
 ===
 
-prepare for npm publishing. implement eslint and tsup.
+1. prepare for npm publishing. implement eslint and tsup.
+2. make sure dist content is correct with all files and directories and d.ts files
+3. publish to npm
 
-===
+=== DONE
 
 add more comprehensive test cases and coverage. also add more complex fixtures domain and files
 

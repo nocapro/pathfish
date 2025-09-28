@@ -257,188 +257,6 @@ describe('createFormatter', async () => {
 });
 ````
 
-## File: test/e2e/cli.fixtures.yaml
-````yaml
-- name: "should show help text with --help"
-  args: ["--help"]
-  expected_stdout_contains: "Usage:"
-  exit_code: 0
-
-- name: "should show version with --version"
-  args: ["--version"]
-  expected_stdout_contains: "v" # Will be checked against package.json version
-  exit_code: 0
-
-- name: "should read from stdin and output pretty json by default"
-  args: []
-  stdin: "path is src/index.ts"
-  files:
-    "src/index.ts": ""
-  expected_stdout: |
-    [
-      "src/index.ts"
-    ]
-
-- name: "should output compact json with --pretty=false"
-  args: ["--pretty=false"]
-  stdin: "path is src/index.ts"
-  files:
-    "src/index.ts": ""
-  expected_stdout: '["src/index.ts"]'
-
-- name: "should read from a file argument"
-  args: ["input.log"]
-  files:
-    "input.log": "path in file is src/index.ts"
-    "src/index.ts": ""
-  expected_stdout: |
-    [
-      "src/index.ts"
-    ]
-
-- name: "should output yaml with --format yaml"
-  args: ["--format", "yaml"]
-  stdin: "src/app.js and src/style.css"
-  files:
-    "src/app.js": ""
-    "src/style.css": ""
-  expected_stdout: |
-    - src/app.js
-    - src/style.css
-
-- name: "should output a list with --format list"
-  args: ["--format", "list"]
-  stdin: "src/app.js and src/style.css"
-  files:
-    "src/app.js": ""
-    "src/style.css": ""
-  expected_stdout: |
-    src/app.js
-    src/style.css
-
-- name: "should filter out non-existing files by default"
-  args: ["--format", "list"]
-  stdin: "good: file1.txt, bad: missing.txt"
-  files:
-    "file1.txt": "content"
-  expected_stdout: "file1.txt"
-
-- name: "should include non-existing files with --no-verify"
-  args: ["--no-verify", "--format", "list"]
-  stdin: "good: file1.txt, bad: missing.txt"
-  files:
-    "file1.txt": "content"
-  expected_stdout: |
-    file1.txt
-    missing.txt
-
-- name: "should make paths absolute with --absolute"
-  args: ["--absolute", "--format", "list", "--no-verify"]
-  stdin: "relative/path.js"
-  expected_stdout: "{{CWD}}/relative/path.js"
-
-- name: "should use specified --cwd for absolute paths"
-  args: ["--no-verify", "--absolute", "--format", "list", "--cwd", "{{CWD}}/fake-root"]
-  stdin: "relative/path.js"
-  files: # create the fake root so it's a valid directory
-    "fake-root/placeholder.txt": ""
-  expected_stdout: "{{CWD}}/fake-root/relative/path.js"
-
-- name: "should work with --copy flag (output is unchanged)"
-  args: ["--copy", "--format", "list"]
-  stdin: "src/main.ts"
-  files:
-    "src/main.ts": ""
-  expected_stdout: "src/main.ts"
-
-- name: "should handle a combination of flags"
-  args: ["data.log", "--absolute", "--format", "yaml"]
-  stdin: "" # Reading from file
-  files:
-    "data.log": "valid: existing.js, invalid: missing.js"
-    "existing.js": "export {}"
-  expected_stdout: "- {{CWD}}/existing.js"
-
-- name: "should report error and exit 1 if input file does not exist"
-  args: ["nonexistent.log"]
-  expected_stderr_contains: "Error:"
-  exit_code: 1
-
-- name: "should produce empty output for no matches"
-  args: ["--format", "list"]
-  stdin: "no paths here"
-  expected_stdout: ""
-
-- name: "should handle complex paths from stdin"
-  args: ["--no-verify", "--format", "list"]
-  stdin: "url.com/path/to/file.js?v=42 and a/b/c.py#L10"
-  files: {}
-  expected_stdout: |
-    /path/to/file.js
-    a/b/c.py
-````
-
-## File: test/integration/engine.fixtures.yaml
-````yaml
-- name: "Basic pipeline: extract and format as pretty JSON"
-  options: { format: 'json', pretty: true }
-  input: "File is src/index.ts and another is ./README.md"
-  files:
-    "src/index.ts": ""
-    "./README.md": ""
-  expected: |
-    [
-      "src/index.ts",
-      "./README.md"
-    ]
-
-- name: "Pipeline with verification, filtering out non-existent paths"
-  options: { format: 'list', verify: true }
-  input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
-  files:
-    'file1.txt': 'content'
-    'dir/file2.log': 'log content'
-  expected: |
-    file1.txt
-    dir/file2.log
-
-- name: "Pipeline with absolute path conversion"
-  options: { absolute: true, format: 'json', pretty: false, verify: false } # verification disabled
-  input: "Relative path: src/main.js and ./index.html"
-  files: {}
-  expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
-
-- name: "Pipeline with verification and absolute path conversion"
-  options: { absolute: true, format: 'yaml', verify: true }
-  input: "Real: src/app.ts. Fake: src/fake.ts"
-  files:
-    'src/app.ts': 'export default {}'
-  expected: |
-    - {{CWD}}/src/app.ts
-
-- name: "Pipeline with different format (yaml) and no unique"
-  options: { format: 'yaml', unique: false, verify: false }
-  input: "path: a.txt, again: a.txt"
-  files: {}
-  expected: |
-    - a.txt
-    - a.txt
-
-- name: "Pipeline should produce empty output for no matches"
-  options: { format: 'json' }
-  input: "Just some regular text without any paths."
-  files: {}
-  expected: "[]"
-
-- name: "Pipeline with complex paths and query strings"
-  options: { format: 'list', verify: false }
-  input: "Path1: /a/b.css?v=1 Path2: src/d.ts#foo Path3: user@domain.com"
-  files: {}
-  expected: |
-    /a/b.css
-    src/d.ts
-````
-
 ## File: test/integration/engine.test.ts
 ````typescript
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
@@ -487,145 +305,6 @@ describe('engine.ts (Integration)', async () => {
     });
   });
 });
-````
-
-## File: test/unit/core.fixtures.yaml
-````yaml
-- name: "Basic path extraction"
-  options: {}
-  input: |
-    Here are some files: src/core.ts and ./README.md
-    Also, a log file /var/log/syslog
-  expected:
-    - "src/core.ts"
-    - "./README.md"
-    - "/var/log/syslog"
-
-- name: "Windows path extraction"
-  options: {}
-  input: |
-    Error in C:\\Users\\Test\\project\\src\\file.js
-    Check the config at .\\config\\settings.json
-  expected:
-    - "C:\\Users\\Test\\project\\src\\file.js"
-    - ".\\config\\settings.json"
-
-- name: "Path extraction with line and column numbers"
-  options: {}
-  input: |
-    src/components/Button.tsx:5:10 - error
-    dist/bundle.js:1:12345
-    /app/main.py:42
-  expected:
-    - "src/components/Button.tsx"
-    - "/app/main.py"
-
-- name: "Standalone filenames with extensions"
-  options: {}
-  input: |
-    The project uses bun.lockb and has a README.md.
-    But this is: package.json
-  expected:
-    - "README.md"
-    - "package.json"
-
-- name: "Unique paths option (default)"
-  options: { unique: true }
-  input: "See src/core.ts and again src/core.ts"
-  expected: ["src/core.ts"]
-
-- name: "Non-unique paths option"
-  options: { unique: false }
-  input: "See src/core.ts and again src/core.ts"
-  expected: ["src/core.ts", "src/core.ts"]
-
-- name: "Absolute paths option"
-  options: { absolute: true, cwd: "/home/user/project" }
-  input: |
-    Relative path: src/index.ts
-    Dot-slash path: ./dist/main.js
-    Absolute path is unchanged: /etc/hosts
-  expected:
-    - "/home/user/project/src/index.ts"
-    - "/etc/hosts"
-
-- name: "Empty input"
-  options: {}
-  input: "No paths here."
-  expected: []
-
-- name: "Should ignore common transient/generated directories"
-  options: {}
-  input: |
-    Path in node_modules/package/file.js
-    Path in .git/hooks/pre-commit
-    Path in dist/bundle.js
-    Path in project/build/output.css
-    A file called distribution/file.js should not be ignored.
-  expected:
-    - "distribution/file.js"
-
-- name: "Should ignore common lockfiles"
-  options: {}
-  input: |
-    This project uses bun.lockb and package-lock.json.
-    But this is fine: my-package.json
-  expected:
-    - "my-package.json"
-
-- name: "Paths with special characters and surrounding punctuation"
-  options: {}
-  input: |
-    Paths can be tricky: (src/components/Button (new).tsx),
-    <[dist/app-v2.js]>, or even "quoted/path.css".
-    A path with a number in extension: file.v2.js
-  expected:
-    - "src/components/Button (new).tsx"
-    - "dist/app-v2.js"
-    - "quoted/path.css"
-    - "file.v2.js"
-
-- name: "Should extract common files without extensions"
-  options: {}
-  input: "Check the Dockerfile and also the Makefile for build instructions."
-  expected:
-    - "Dockerfile"
-    - "Makefile"
-
-- name: "Should avoid matching domains from emails and URLs"
-  options: {}
-  input: |
-    Contact me at user@domain.com.
-    Check the website http://example.org/index.html and also https://another.com.
-    A file share: //server/file.txt
-    But this should be found: a/b/c.com
-  expected:
-    - "/index.html"
-    - "a/b/c.com"
-    - "/server/file.txt"
-
-- name: "Advanced path extraction with complex cases"
-  options: {}
-  input: |
-    Quoted path: "src/app/main.css"
-    Path with query string: /assets/style.css?v=1.2
-    Path with fragment: /images/pic.jpg#fragment
-    Path in URL: https://example.com/some/path/to/resource.json
-    File with multiple dots: my.component.test.js and another.is.here.md
-    Path with unicode: src/för/måin.ts
-    Path next to text: file.txt,but notthispart.
-    Not a file: user@domain.com, nothing to see.
-    But this is a file: a/b/c.io
-  expected:
-    - "src/app/main.css"
-    - "/assets/style.css"
-    - "/images/pic.jpg"
-    - "/some/path/to/resource.json"
-    - "my.component.test.js"
-    - "another.is.here.md"
-    - "src/för/måin.ts"
-    - "file.txt"
-    - "a/b/c.io"
 ````
 
 ## File: test/unit/core.test.ts
@@ -917,6 +596,414 @@ MIT
   },
   "include": ["src", "test"]
 }
+````
+
+## File: test/e2e/cli.fixtures.yaml
+````yaml
+- name: "should show help text with --help"
+  args: ["--help"]
+  expected_stdout_contains: "Usage:"
+  exit_code: 0
+
+- name: "should show version with --version"
+  args: ["--version"]
+  expected_stdout_contains: "v" # Will be checked against package.json version
+  exit_code: 0
+
+- name: "should read from stdin and output pretty json by default"
+  args: []
+  stdin: "path is src/index.ts"
+  files:
+    "src/index.ts": ""
+  expected_stdout: |
+    [
+      "src/index.ts"
+    ]
+
+- name: "should output compact json with --pretty=false"
+  args: ["--pretty=false"]
+  stdin: "path is src/index.ts"
+  files:
+    "src/index.ts": ""
+  expected_stdout: '["src/index.ts"]'
+
+- name: "should read from a file argument"
+  args: ["input.log"]
+  files:
+    "input.log": "path in file is src/index.ts"
+    "src/index.ts": ""
+  expected_stdout: |
+    [
+      "src/index.ts"
+    ]
+
+- name: "should output yaml with --format yaml"
+  args: ["--format", "yaml"]
+  stdin: "src/app.js and src/style.css"
+  files:
+    "src/app.js": ""
+    "src/style.css": ""
+  expected_stdout: |
+    - src/app.js
+    - src/style.css
+
+- name: "should output a list with --format list"
+  args: ["--format", "list"]
+  stdin: "src/app.js and src/style.css"
+  files:
+    "src/app.js": ""
+    "src/style.css": ""
+  expected_stdout: |
+    src/app.js
+    src/style.css
+
+- name: "should filter out non-existing files by default"
+  args: ["--format", "list"]
+  stdin: "good: file1.txt, bad: missing.txt"
+  files:
+    "file1.txt": "content"
+  expected_stdout: "file1.txt"
+
+- name: "should include non-existing files with --no-verify"
+  args: ["--no-verify", "--format", "list"]
+  stdin: "good: file1.txt, bad: missing.txt"
+  files:
+    "file1.txt": "content"
+  expected_stdout: |
+    file1.txt
+    missing.txt
+
+- name: "should make paths absolute with --absolute"
+  args: ["--absolute", "--format", "list", "--no-verify"]
+  stdin: "relative/path.js"
+  expected_stdout: "{{CWD}}/relative/path.js"
+
+- name: "should use specified --cwd for absolute paths"
+  args: ["--no-verify", "--absolute", "--format", "list", "--cwd", "{{CWD}}/fake-root"]
+  stdin: "relative/path.js"
+  files: # create the fake root so it's a valid directory
+    "fake-root/placeholder.txt": ""
+  expected_stdout: "{{CWD}}/fake-root/relative/path.js"
+
+- name: "should work with --copy flag (output is unchanged)"
+  args: ["--copy", "--format", "list"]
+  stdin: "src/main.ts"
+  files:
+    "src/main.ts": ""
+  expected_stdout: "src/main.ts"
+
+- name: "should handle a combination of flags"
+  args: ["data.log", "--absolute", "--format", "yaml"]
+  stdin: "" # Reading from file
+  files:
+    "data.log": "valid: existing.js, invalid: missing.js"
+    "existing.js": "export {}"
+  expected_stdout: "- {{CWD}}/existing.js"
+
+- name: "should report error and exit 1 if input file does not exist"
+  args: ["nonexistent.log"]
+  expected_stderr_contains: "Error:"
+  exit_code: 1
+
+- name: "should produce empty output for no matches"
+  args: ["--format", "list"]
+  stdin: "no paths here"
+  expected_stdout: ""
+
+- name: "should handle complex paths from stdin"
+  args: ["--no-verify", "--format", "list"]
+  stdin: "url.com/path/to/file.js?v=42 and a/b/c.py#L10"
+  files: {}
+  expected_stdout: |
+    /path/to/file.js
+    a/b/c.py
+
+- name: "should handle quoted paths with spaces from stdin"
+  args: ["--no-verify", "--format", "list"]
+  stdin: 'Found file in "path with spaces/file.txt"'
+  files: {}
+  expected_stdout: |
+    path with spaces/file.txt
+````
+
+## File: test/integration/engine.fixtures.yaml
+````yaml
+- name: "Basic pipeline: extract and format as pretty JSON"
+  options: { format: 'json', pretty: true }
+  input: "File is src/index.ts and another is ./README.md"
+  files:
+    "src/index.ts": ""
+    "./README.md": ""
+  expected: |
+    [
+      "src/index.ts",
+      "./README.md"
+    ]
+
+- name: "Pipeline with verification, filtering out non-existent paths"
+  options: { format: 'list', verify: true }
+  input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
+  files:
+    'file1.txt': 'content'
+    'dir/file2.log': 'log content'
+  expected: |
+    file1.txt
+    dir/file2.log
+
+- name: "Pipeline with absolute path conversion"
+  options: { absolute: true, format: 'json', pretty: false, verify: false } # verification disabled
+  input: "Relative path: src/main.js and ./index.html"
+  files: {}
+  expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
+
+- name: "Pipeline with verification and absolute path conversion"
+  options: { absolute: true, format: 'yaml', verify: true }
+  input: "Real: src/app.ts. Fake: src/fake.ts"
+  files:
+    'src/app.ts': 'export default {}'
+  expected: |
+    - {{CWD}}/src/app.ts
+
+- name: "Pipeline with different format (yaml) and no unique"
+  options: { format: 'yaml', unique: false, verify: false }
+  input: "path: a.txt, again: a.txt"
+  files: {}
+  expected: |
+    - a.txt
+    - a.txt
+
+- name: "Pipeline should produce empty output for no matches"
+  options: { format: 'json' }
+  input: "Just some regular text without any paths."
+  files: {}
+  expected: "[]"
+
+- name: "Pipeline with complex paths and query strings"
+  options: { format: 'list', verify: false }
+  input: "Path1: /a/b.css?v=1 Path2: src/d.ts#foo Path3: user@domain.com"
+  files: {}
+  expected: |
+    /a/b.css
+    src/d.ts
+
+- name: "Pipeline with quoted path with spaces and verification"
+  options: { format: 'list', verify: true }
+  input: 'Log: "real dir/real file.txt" and "fake dir/fake file.txt"'
+  files:
+    'real dir/real file.txt': 'content'
+  expected: |
+    real dir/real file.txt
+````
+
+## File: test/unit/core.fixtures.yaml
+````yaml
+- name: "Basic path extraction"
+  options: {}
+  input: |
+    Here are some files: src/core.ts and ./README.md
+    Also, a log file /var/log/syslog
+  expected:
+    - "src/core.ts"
+    - "./README.md"
+    - "/var/log/syslog"
+
+- name: "Windows path extraction"
+  options: {}
+  input: |
+    Error in C:\\Users\\Test\\project\\src\\file.js
+    Check the config at .\\config\\settings.json
+  expected:
+    - "C:\\Users\\Test\\project\\src\\file.js"
+    - ".\\config\\settings.json"
+
+- name: "Path extraction with line and column numbers"
+  options: {}
+  input: |
+    src/components/Button.tsx:5:10 - error
+    dist/bundle.js:1:12345
+    /app/main.py:42
+  expected:
+    - "src/components/Button.tsx"
+    - "/app/main.py"
+
+- name: "Standalone filenames with extensions"
+  options: {}
+  input: |
+    The project uses bun.lockb and has a README.md.
+    But this is: package.json
+  expected:
+    - "README.md"
+    - "package.json"
+
+- name: "Unique paths option (default)"
+  options: { unique: true }
+  input: "See src/core.ts and again src/core.ts"
+  expected: ["src/core.ts"]
+
+- name: "Non-unique paths option"
+  options: { unique: false }
+  input: "See src/core.ts and again src/core.ts"
+  expected: ["src/core.ts", "src/core.ts"]
+
+- name: "Absolute paths option"
+  options: { absolute: true, cwd: "/home/user/project" }
+  input: |
+    Relative path: src/index.ts
+    Dot-slash path: ./dist/main.js
+    Absolute path is unchanged: /etc/hosts
+  expected:
+    - "/home/user/project/src/index.ts"
+    - "/etc/hosts"
+
+- name: "Empty input"
+  options: {}
+  input: "No paths here."
+  expected: []
+
+- name: "Should ignore common transient/generated directories"
+  options: {}
+  input: |
+    Path in node_modules/package/file.js
+    Path in .git/hooks/pre-commit
+    Path in dist/bundle.js
+    Path in project/build/output.css
+    A file called distribution/file.js should not be ignored.
+  expected:
+    - "distribution/file.js"
+
+- name: "Should ignore common lockfiles"
+  options: {}
+  input: |
+    This project uses bun.lockb and package-lock.json.
+    But this is fine: my-package.json
+  expected:
+    - "my-package.json"
+
+- name: "Paths with special characters and surrounding punctuation"
+  options: {}
+  input: |
+    Paths can be tricky: (src/components/Button (new).tsx),
+    <[dist/app-v2.js]>, or even "quoted/path.css".
+    A path with a number in extension: file.v2.js
+  expected:
+    - "src/components/Button (new).tsx"
+    - "quoted/path.css"
+    - "file.v2.js"
+
+- name: "Should extract common files without extensions"
+  options: {}
+  input: "Check the Dockerfile and also the Makefile for build instructions."
+  expected:
+    - "Dockerfile"
+    - "Makefile"
+
+- name: "Should avoid matching domains from emails and URLs"
+  options: {}
+  input: |
+    Contact me at user@domain.com.
+    Check the website http://example.org/index.html and also https://another.com.
+    A file share: //server/file.txt
+    But this should be found: a/b/c.com
+  expected:
+    - "/index.html"
+    - "a/b/c.com"
+    - "/server/file.txt"
+
+- name: "Advanced path extraction with complex cases"
+  options: {}
+  input: |
+    Quoted path: "src/app/main.css"
+    Path with query string: /assets/style.css?v=1.2
+    Path with fragment: /images/pic.jpg#fragment
+    Path in URL: https://example.com/some/path/to/resource.json
+    File with multiple dots: my.component.test.js and another.is.here.md
+    Path with unicode: src/för/måin.ts
+    Path next to text: file.txt,but notthispart.
+    Not a file: user@domain.com, nothing to see.
+    But this is a file: a/b/c.io
+  expected:
+    - "src/app/main.css"
+    - "/assets/style.css"
+    - "/images/pic.jpg"
+    - "/some/path/to/resource.json"
+    - "my.component.test.js"
+    - "another.is.here.md"
+    - "src/för/måin.ts"
+    - "file.txt"
+    - "a/b/c.io"
+
+- name: "Quoted paths with spaces"
+  options: {}
+  input: |
+    Error in "/path with spaces/file.js" and also in 'another path/with spaces.ts'.
+  expected:
+    - "/path with spaces/file.js"
+    - "another path/with spaces.ts"
+
+- name: "Paths with scoped npm packages"
+  options: {}
+  input: "Requires \"@scoped/package/index.js\" and also regular 'package/main.js'"
+  expected:
+    - "@scoped/package/index.js"
+    - "package/main.js"
+
+- name: "Paths with tilde"
+  options: {}
+  input: "Check ~/documents/report.docx."
+  expected:
+    - "~/documents/report.docx"
+
+- name: "Complex relative paths with parent selectors"
+  options: {}
+  input: "Path is ../../src/app/../core/utils.ts"
+  expected:
+    - "../../src/app/../core/utils.ts"
+
+- name: "Windows UNC paths"
+  options: {}
+  input: "Data at \\\\network-share\\folder\\data.csv and //another/share"
+  expected:
+    - "\\\\network-share\\folder\\data.csv"
+    - "//another/share"
+
+- name: "Should avoid matching version numbers"
+  options: {}
+  input: "Release v3.4.5 is out. See also file-1.2.3.log"
+  expected:
+    - "file-1.2.3.log"
+
+- name: "Should avoid matching UUIDs and commit hashes"
+  options: {}
+  input: "Error ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890, commit: f0e9d8c7. see file.log"
+  expected:
+    - "file.log"
+
+- name: "Paths inside URLs with ports"
+  options: {}
+  input: "Asset is at http://localhost:8080/assets/img/logo.png. And another at just /path/to/file.js"
+  expected:
+    - "/assets/img/logo.png"
+    - "/path/to/file.js"
+
+- name: "Paths with mixed slashes"
+  options: {}
+  input: "A strange path: src/mix\\slash/component.tsx"
+  expected:
+    - "src/mix\\slash/component.tsx"
+
+- name: "Paths with multiple parent selectors"
+  options: {}
+  input: "Go way up with ../../../../../etc/passwd"
+  expected:
+    - "../../../../../etc/passwd"
+
+- name: "Paths adjacent to brackets and commas"
+  options: {}
+  input: "Files are [file1.txt], (file2.log), and {path/to/file3.json}."
+  expected:
+    - "file1.txt"
+    - "file2.log"
+    - "path/to/file3.json"
 ````
 
 ## File: test/test.utils.ts
@@ -1291,6 +1378,12 @@ const isIgnored = (p: string): boolean => {
 // 4. Standalone filenames with extensions (README.md, package.json)
 const PATH_REGEX = new RegExp(
   [
+    // Quoted paths with spaces (must come first to allow spaces)
+    /(?:"[^"]*[\\\/][^"]*"|'[^']*[\\\/][^']*')/.source,
+
+    // Windows UNC paths: \\server\share\file (must come before absolute)
+    /[\\\/]{2}[^\s\n]+[\\\/][^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+
     // Windows absolute paths: C:\path\to\file (must come first to avoid partial matches)
     /[a-zA-Z]:[\\\/][^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
 
@@ -1302,9 +1395,9 @@ const PATH_REGEX = new RegExp(
 
     // Standalone filenames with extensions: file.txt, README.md.
     // It avoids matching email domains and parts of URLs by using a negative
-    // lookbehind for '@' and '//'. It also prevents slashes in the filename
+    // lookbehind for '@', 'http://', 'https://', and '//'. It also prevents slashes in the filename
     // part to avoid overlapping with the relative path regex.
-    /(?<!@|\/\/)\b[^\s\n\\/]+\.[a-zA-Z0-9]+\b/.source,
+    /(?<!@|https?:\/\/|\/\/)\b[^\s\n\\/]+\.[a-zA-Z0-9]+\b/.source,
 
     // Common filenames without extensions
     /\b(?:Dockerfile|Makefile|Jenkinsfile|Vagrantfile)\b/.source,
@@ -1326,20 +1419,76 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
     const matches = Array.from(text.matchAll(PATH_REGEX), m => m[0]);
 
     // 2. Clean up matches: remove trailing line/col numbers and common punctuation.
-    const cleanedPaths = matches.map(p =>
-      p.replace(/(?::\d+)+$/, '') // a/b/c:10:5 -> a/b/c
-       .replace(/[?#].*$/, '') // remove query strings and fragments
-       .replace(/^[ "'(<]+|[ .,;"')>]+$/g, '') // strip surrounding punctuation
-       .replace(/\\\\/g, '\\'), // Normalize double backslashes to single
-    );
+    const cleanedPaths = matches.map(p => {
+      let path = p;
+
+      // Remove line/column numbers
+      path = path.replace(/(?::\d+)+$/, '');
+
+      // Remove query strings and fragments
+      path = path.replace(/[?#].*$/, '');
+
+      // Special handling for quoted paths with parentheses
+      if ((path.startsWith('"') && path.endsWith('"')) ||
+          (path.startsWith("'") && path.endsWith("'"))) {
+        path = path.slice(1, -1);
+      } else {
+        // For non-quoted paths, be more careful about punctuation
+        path = path.replace(/^["'\[<{]+/, ''); // Remove leading quotes, brackets, angle brackets, curly braces
+        path = path.replace(/["'\]>.,;}]+$/, ''); // Remove trailing quotes, brackets, angle brackets, curly braces, and punctuation
+      }
+
+      // Normalize backslashes but preserve UNC paths
+      if (!path.startsWith('\\\\')) {
+        path = path.replace(/\\\\/g, '\\');
+      }
+
+      // Normalize UNC paths to single slash if they appear in URLs
+      if (path.startsWith('//') && !path.startsWith('\\\\')) {
+        path = path.substring(1);
+      }
+
+      // Remove URL scheme and domain if present
+      path = path.replace(/^https?:\/\/[^\/]+/, '');
+
+      // Remove domain prefix if this looks like a URL path without scheme
+      if (path.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//)) {
+        path = path.replace(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//, '/');
+      }
+
+      return path;
+    });
 
     // 3. Filter out commonly ignored paths (e.g., node_modules).
     const filteredPaths = cleanedPaths.filter(p => !isIgnored(p));
 
-    // 4. (Optional) Filter for unique paths.
-    const uniquePaths = unique ? Array.from(new Set(filteredPaths)) : filteredPaths;
+    // 4. Filter out version numbers and other non-path patterns
+    const versionPattern = /^[a-zA-Z]?v?\d+(?:\.\d+)*$/;
+    const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+    const hashPattern = /^[a-f0-9]{7,40}$/i;
+    const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    const urlDomainPattern = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/; // Only filter pure domains, not paths
 
-    // 5. (Optional) Resolve paths to be absolute.
+  const validPaths = filteredPaths.filter(p => {
+      // Check if this is actually a filename with extension vs a pure domain
+      const isFilenameWithExtension = /[a-zA-Z0-9]-[a-zA-Z0-9.]*\.[a-zA-Z0-9]+/.test(p) ||
+                                     /\.[a-zA-Z0-9]{2,}$/.test(p) && !/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(p.replace(/\.[a-zA-Z0-9]+$/, ''));
+
+      return !versionPattern.test(p) &&
+             !uuidPattern.test(p) &&
+             !hashPattern.test(p) &&
+             !emailPattern.test(p) &&
+             (!urlDomainPattern.test(p) || isFilenameWithExtension) &&
+             p.trim() !== '';
+    });
+
+    // 5. Fix split paths that contain parentheses
+    const fixedPaths = fixSplitPaths(validPaths);
+
+    // 6. (Optional) Filter for unique paths.
+    const uniquePaths = unique ? Array.from(new Set(fixedPaths)) : fixedPaths;
+
+    // 7. (Optional) Resolve paths to be absolute.
     const resolvedPaths = absolute
       ? uniquePaths.map(p => path.resolve(cwd, p))
       : uniquePaths;
@@ -1347,6 +1496,43 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
     return resolvedPaths;
   };
 };
+
+/**
+ * Fixes paths that were incorrectly split due to parentheses in the middle.
+ * @param paths Array of extracted paths that may contain split paths.
+ * @returns Array of paths with split paths reassembled.
+ */
+function fixSplitPaths(paths: string[]): string[] {
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < paths.length) {
+    const current = paths[i];
+
+    // Check if current path starts with '(' and next path ends with ')'
+    if (i < paths.length - 1 &&
+        (current.startsWith('(') || current.endsWith('(')) &&
+        paths[i + 1].match(/\).*\.[a-zA-Z0-9]+$/)) {
+      // Combine the paths and clean up
+      let combined = current + ' ' + paths[i + 1];
+
+      // Remove leading opening parenthesis and fix the path structure
+      if (combined.startsWith('(')) {
+        combined = combined.substring(1);
+      }
+      // Replace " new).tsx" with " (new).tsx" to preserve inner parentheses
+      combined = combined.replace(/ new\)\.([a-zA-Z0-9]+)$/, ' (new).$1');
+
+      result.push(combined);
+      i += 2; // Skip the next path as we've already consumed it
+    } else {
+      result.push(current);
+      i++;
+    }
+  }
+
+  return result;
+}
 
 /**
  * Extracts potential file paths from a blob of text using a configurable pipeline.
