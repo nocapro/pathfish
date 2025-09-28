@@ -1,14 +1,9 @@
 this is the published version of pathfish, guardrails below problems into test cases, I also checked that the file exists.
 
+but its weird that init.store.ts and fs.service.ts not detected but in test cases is passed
+
 ---------------
 
-realme-book@realme-book:~/Project/code/relaycode-new$ bun tsc -b | pathfish
-error: "tsc" exited with code 1
-[
-  "src/hooks/useDebugMenu.tsx",
-  "src/services/copy.service.ts",
-  "src/services/init.service.ts"
-]
 realme-book@realme-book:~/Project/code/relaycode-new$ bun tsc -b
 src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
 
@@ -49,25 +44,25 @@ src/services/init.service.ts:20:25 - error TS2554: Expected 1 arguments, but got
 Found 5 errors.
 
 error: "tsc" exited with code 1
-realme-book@realme-book:~/Project/code/relaycode-new$ bun tsc -b | pathfish --no-verify --format list
-error: "tsc" exited with code 1
-src/components/SettingsScreen.tsx(5,10):
-src/hooks/useDebugMenu.tsx
-src/services/copy.service.ts
-src/services/init.service.ts
-src/services/init.service.ts(20,25):
 realme-book@realme-book:~/Project/code/relaycode-new$ bun tsc -b | pathfish --no-verify
 error: "tsc" exited with code 1
 [
-  "src/components/SettingsScreen.tsx(5,10):",
+  "src/components/SettingsScreen.tsx",
   "src/hooks/useDebugMenu.tsx",
   "src/services/copy.service.ts",
-  "src/services/init.service.ts",
-  "src/services/init.service.ts(20,25):"
+  "src/services/init.service.ts"
 ]
-realme-book@realme-book:~/Project/code/relaycode-new$
-
 --------------------
+
+===
+
+current algorithm is directly analysing blob to find the file path using regex strategy. I hate it only having one strategy..
+
+given the fuzzy name in readme,
+
+all I want is, the first class strategy is fuzzy which the algo should collect all cwd files and dirs to map out local paths, then parallelly fuzzy matching to find the best percentage match whether local files (file with ext, not full path) mentioned in the blob or not. for faster execution on large codebase, this fuzzy can ask for help of regex strategy to prioritize which files to check first
+
+and user can choose which strategy to use. the fuzzy, regex, or both strategies for better results. defaulting to fuzzy strategy
 
 === DONE
 

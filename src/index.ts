@@ -1,5 +1,5 @@
 // Re-export core functions and types for programmatic use.
-export { extractPaths, verifyPaths, type Options } from './core';
+export { extractPaths, verifyPaths, type Options, type Strategy } from './core';
 
 // Import the low-level clipboard utility.
 import { copyToClipboard } from './utils';

@@ -1,0 +1,132 @@
+uuid: 44b7d30f-0745-423f-91c6-2a7e781665a9
+projectId: pathfish
+createdAt: '2025-09-28T23:53:11.078Z'
+gitCommitMsg: >-
+  fix(ts): Re-export Strategy type from engine module
+
+  The `Strategy` type, which is defined in `core.ts`, is used in the exported
+  `PipelineOptions` type within `engine.ts`. However, it was not being
+  re-exported from `engine.ts`.
+
+  This caused a TypeScript error when `cli.ts` attempted to import the
+  `Strategy` type from the engine module.
+
+  This commit adds an `export type { Strategy } from './core'` statement to
+  `engine.ts` to correctly expose the type as part of the engine's public API,
+  resolving the compilation error.
+promptSummary: >-
+  The user provided a TypeScript error indicating that the `Strategy` type was
+  not exported from `src/engine.ts`, which prevented `src/cli.ts` from importing
+  it. I have fixed this by re-exporting the `Strategy` type from
+  `src/engine.ts`.
+reasoning:
+  - >-
+    You've caught a TypeScript error! My apologies. The problem is that
+    `src/engine.ts` uses the `Strategy` type in its exported `PipelineOptions`
+    but doesn't re-export the `Strategy` type itself. This means other modules,
+    like `src/cli.ts`, can't import `Strategy` from `engine.ts`.
+  - >-
+    The fix is to explicitly re-export the `Strategy` type from `src/engine.ts`.
+    This makes it part of the engine's public API, which is appropriate since
+    it's part of its options type.
+  - 'Here is the patch for `src/engine.ts`:'
+  - >-
+    This change removes `Strategy` from the main import statement and adds a
+    dedicated `export type ... from` statement. This both re-exports the type
+    for other modules and makes it available for use within `src/engine.ts`,
+    resolving the compiler error.
+operations:
+  - type: write
+    path: src/engine.ts
+    content: >+
+      --- src/engine.ts
+
+      +++ src/engine.ts
+
+      @@ -1,5 +1,6 @@
+
+      -import { extractPaths, verifyPaths, type Options, type Strategy } from
+      './core';
+
+      +import { extractPaths, verifyPaths, type Options } from './core';
+       import { createFormatter, type Format } from './utils';
+      +export type { Strategy } from './core';
+       
+       /**
+        * Combined options for the entire path processing pipeline.
+
+    patchStrategy: standard-diff
+snapshot:
+  src/engine.ts: >-
+    import { extractPaths, verifyPaths, type Options, type Strategy } from
+    './core';
+
+    import { createFormatter, type Format } from './utils';
+
+
+    /**
+     * Combined options for the entire path processing pipeline.
+     */
+    export type PipelineOptions = Options & {
+      /**
+       * When false, disables filtering of paths that do not exist on disk.
+       * @default true
+       */
+      verify?: boolean;
+      /**
+       * The output format.
+       * @default 'json'
+       */
+      format?: Format;
+      /**
+       * Pretty-print JSON output.
+       * @default true
+       */
+      pretty?: boolean;
+      /**
+       * The path extraction strategy to use.
+       * @default 'fuzzy'
+       */
+      strategy?: Strategy;
+    };
+
+
+    /**
+     * Executes the full path extraction and formatting pipeline.
+     * This is the core engine of pathfish, decoupled from the CLI.
+     * @param text The input text to process.
+     * @param options Configuration for the pipeline.
+     * @returns A promise that resolves to the formatted string output.
+     */
+    export async function runPipeline(
+      text: string,
+      options: PipelineOptions = {},
+    ): Promise<string> {
+      const {
+        verify: shouldVerify = true,
+        format: formatType = 'json',
+        pretty = true,
+        ...extractOptions
+      } = options;
+
+      // 1. Extract paths from the text using the core extractor.
+      const initialPaths = await extractPaths(text, { unique: true, ...extractOptions });
+
+      // 2. (Optional) Verify that the paths actually exist on disk.
+      const verifiedPaths = shouldVerify
+        ? await verifyPaths(initialPaths, extractOptions.cwd)
+        : initialPaths;
+
+      // 3. Format the resulting paths into the desired output string.
+      const format = createFormatter(formatType, pretty);
+      const formattedOutput = format(verifiedPaths);
+
+      return formattedOutput;
+    }
+approved: true
+linesAdded: null
+linesRemoved: null
+linesDifference: null
+gitCommittedAt: null
+status: committed
+id: 32

@@ -1,5 +1,6 @@
-import { extractPaths, verifyPaths, type Options } from './core';
+import { extractPaths, verifyPaths, type Options, type Strategy } from './core';
 import { createFormatter, type Format } from './utils';
+export type { Strategy } from './core';
 
 /**
  * Combined options for the entire path processing pipeline.
@@ -20,6 +21,11 @@ export type PipelineOptions = Options & {
    * @default true
    */
   pretty?: boolean;
+  /**
+   * The path extraction strategy to use.
+   * @default 'fuzzy'
+   */
+  strategy?: Strategy;
 };
 
 /**
@@ -41,7 +47,7 @@ export async function runPipeline(
   } = options;
 
   // 1. Extract paths from the text using the core extractor.
-  const initialPaths = extractPaths(text, { unique: true, ...extractOptions });
+  const initialPaths = await extractPaths(text, { unique: true, ...extractOptions });
 
   // 2. (Optional) Verify that the paths actually exist on disk.
   const verifiedPaths = shouldVerify

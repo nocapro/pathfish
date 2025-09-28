@@ -95,8 +95,9 @@ const raw = readFileSync('tsc.log', 'utf8');
 // const raw = await Bun.file('tsc.log').text();
 
 // 1. Extract all potential path-like strings from text
-const potentialPaths = extractPaths(raw, {
+const potentialPaths = await extractPaths(raw, {
   absolute: true,
+  strategy: 'both', // use both regex and fuzzy matching
   cwd: process.cwd(), // or import.meta.dir for Bun
 });
 
@@ -104,7 +105,7 @@ const potentialPaths = extractPaths(raw, {
 const existingPaths = await verifyPaths(potentialPaths);
 
 console.log(existingPaths);
-// ["/home/you/project/src/components/SettingsScreen.tsx", ...]
+// ["/home/user/project/src/components/SettingsScreen.tsx", ...]
 ```
 
 ### API Signature
@@ -114,9 +115,10 @@ type Options = {
   absolute?: boolean; // make every path absolute
   cwd?: string;       // base for relative→absolute conversion
   unique?: boolean;   // de-duplicate (default: true)
+  strategy?: 'regex' | 'fuzzy' | 'both'; // (default: 'fuzzy')
 };
 
-function extractPaths(text: string, opts?: Options): string[];
+async function extractPaths(text: string, opts?: Options): Promise<string[]>;
 
 async function verifyPaths(paths: string[]): Promise<string[]>; // keeps only existing
 async function copyPathsToClipboard(paths: string[]): Promise<void>; // cross-platform

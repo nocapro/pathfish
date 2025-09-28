@@ -25,7 +25,7 @@
     "tsup": "^8.5.0"
   },
   "scripts": {
-    "test": "tsup && bun test test",
+    "dist-test": "tsup && bun test test",
     "build": "tsup",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

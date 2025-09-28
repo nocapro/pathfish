@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 
+export type Strategy = 'regex' | 'fuzzy' | 'both';
+
 /**
  * Options for path extraction.
  */
@@ -20,6 +22,11 @@ export type Options = {
    * @default true
    */
   unique?: boolean;
+  /**
+   * The path extraction strategy to use.
+   * @default 'fuzzy'
+   */
+  strategy?: Strategy;
 };
 
 const DEFAULT_IGNORE_DIRS = ['node_modules', '.git', 'dist', 'build'];
@@ -85,155 +92,192 @@ const PATH_REGEX = new RegExp(
   'g',
 );
 
-/**
- * A higher-order function that creates a path extraction pipeline.
- * This functional approach makes the process clear, configurable, and extensible.
- * @param opts Configuration options for the pipeline.
- * @returns A function that takes text and returns an array of paths.
- */
-const createPathExtractionPipeline = (opts: Options = {}) => {
-  const { absolute = false, cwd = process.cwd(), unique = true } = opts;
-
-  return (text: string): string[] => {
-    // 1. Find all potential paths using the regex.
-    const matches = Array.from(text.matchAll(PATH_REGEX), m => m[0]);
-
-    // 2. Extract valid paths from potentially malformed matches
-    const extractedPaths: string[] = [];
-    for (const match of matches) {
-      // If the match contains line breaks, it might contain multiple paths
-      if (match.includes('\n')) {
-        // Extract individual file paths from multiline strings
-        const pathPattern = /[a-zA-Z0-9_./\\-]+(?:\/[a-zA-Z0-9_.-]+)*\.[a-zA-Z0-9]{1,5}(?::\d+(?::\d+)?)?/gm;
-        const pathMatches = match.match(pathPattern);
-        if (pathMatches) {
-          extractedPaths.push(...pathMatches.map(p => p.trim()));
-        }
+async function walk(dir: string): Promise<string[]> {
+  const allFiles: string[] = [];
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        allFiles.push(...(await walk(fullPath)));
       } else {
-        extractedPaths.push(match);
+        allFiles.push(fullPath);
       }
     }
+  } catch (err) {
+    // Ignore errors from directories that cannot be read
+  }
+  return allFiles;
+}
 
-    // 3. Clean up matches: remove trailing line/col numbers and common punctuation.
-    const cleanedPaths = extractedPaths.map(p => {
-      let path = p;
+/**
+ * Extracts paths using a fuzzy strategy by looking for file basenames in text.
+ * @param text The text to search within.
+ * @param cwd The working directory to scan for files.
+ * @returns A promise resolving to an array of found relative paths.
+ */
+async function extractPathsWithFuzzy(
+  text: string,
+  cwd: string,
+): Promise<string[]> {
+  const allFilePaths = await walk(cwd);
+  const foundPaths = new Set<string>();
 
-      // Remove line/column numbers and other trailing noise.
-      // Handles: :5:10, (5,10), :5, :5:, (5,10):
-      path = path.replace(/[:(]\d+(?:[.,:]\d+)*\)?[:]?$/, '');
+  for (const absolutePath of allFilePaths) {
+    const relativePath = path.relative(cwd, absolutePath);
+    if (isIgnored(relativePath)) {
+      continue;
+    }
 
-      // Remove query strings and fragments
-      path = path.replace(/[?#].*$/, '');
+    const basename = path.basename(relativePath);
+    // Use a regex to find the basename as a whole word to avoid matching substrings.
+    const basenameRegex = new RegExp(
+      `\\b${basename.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`,
+      'g',
+    );
+    if (text.match(basenameRegex)) {
+      foundPaths.add(relativePath);
+    }
+  }
 
-      // Special handling for quoted paths and parentheses
-      if ((path.startsWith('"') && path.endsWith('"')) ||
-          (path.startsWith("'") && path.endsWith("'"))) {
-        path = path.slice(1, -1);
-      } else if (path.startsWith('(') && path.endsWith(')')) {
-        // Remove outer parentheses from parenthesized paths
-        path = path.slice(1, -1);
-      } else {
-        // For non-quoted paths, be more careful about punctuation
-        path = path.replace(/^["'\[<{]+/, ''); // Remove leading quotes, brackets, angle brackets, curly braces
-        path = path.replace(/["'\]>.,;}]+$/, ''); // Remove trailing quotes, brackets, angle brackets, curly braces, and punctuation
+  return Array.from(foundPaths);
+}
+
+/**
+ * Extracts paths using a regex-based strategy.
+ * @param text The text to search within.
+ * @returns An array of found path strings, without post-processing.
+ */
+function extractPathsWithRegex(text: string): string[] {
+  // 1. Find all potential paths using the regex.
+  const matches = Array.from(text.matchAll(PATH_REGEX), m => m[0]);
+
+  // 2. Extract valid paths from potentially malformed matches
+  const extractedPaths: string[] = [];
+  for (const match of matches) {
+    // If the match contains line breaks, it might contain multiple paths
+    if (match.includes('\n')) {
+      // Extract individual file paths from multiline strings
+      const pathPattern = /[a-zA-Z0-9_./\\-]+(?:\/[a-zA-Z0-9_.-]+)*\.[a-zA-Z0-9]{1,5}(?::\d+(?::\d+)?)?/gm;
+      const pathMatches = match.match(pathPattern);
+      if (pathMatches) {
+        extractedPaths.push(...pathMatches.map(p => p.trim()));
       }
+    } else {
+      extractedPaths.push(match);
+    }
+  }
 
-      // Normalize backslashes but preserve UNC paths
-      if (!path.startsWith('\\\\')) {
-        path = path.replace(/\\\\/g, '\\');
+  // 3. Clean up matches: remove trailing line/col numbers and common punctuation.
+  const cleanedPaths = extractedPaths.map(p => {
+    let pathStr = p;
+
+    // Remove line/column numbers and other trailing noise.
+    // Handles: :5:10, (5,10), :5, :5:, (5,10):
+    pathStr = pathStr.replace(/[:(]\d+(?:[.,:]\d+)*\)?[:]?$/, '');
+
+    // Remove query strings and fragments
+    pathStr = pathStr.replace(/[?#].*$/, '');
+
+    // Special handling for quoted paths and parentheses
+    if ((pathStr.startsWith('"') && pathStr.endsWith('"')) ||
+        (pathStr.startsWith("'") && pathStr.endsWith("'"))) {
+      pathStr = pathStr.slice(1, -1);
+    } else if (pathStr.startsWith('(') && pathStr.endsWith(')')) {
+      // Remove outer parentheses from parenthesized paths
+      pathStr = pathStr.slice(1, -1);
+    } else {
+      // For non-quoted paths, be more careful about punctuation
+      pathStr = pathStr.replace(/^["'\[<{]+/, ''); // Remove leading quotes, brackets, angle brackets, curly braces
+      pathStr = pathStr.replace(/["'\]>.,;}]+$/, ''); // Remove trailing quotes, brackets, angle brackets, curly braces, and punctuation
+    }
+
+    // Normalize backslashes but preserve UNC paths
+    if (!pathStr.startsWith('\\\\')) {
+      pathStr = pathStr.replace(/\\\\/g, '\\');
+    }
+
+    // Handle UNC paths intelligently - preserve file shares, normalize URL paths
+    if (pathStr.startsWith('//') && !pathStr.startsWith('\\\\')) {
+      // If it has a file extension, it's likely a file path that should be normalized
+      // If it doesn't have an extension and has only 2 segments, it's likely a UNC share
+      const hasExtension = /\.[a-zA-Z0-9]{1,5}$/.test(pathStr);
+      const segments = pathStr.split('/').filter(s => s.length > 0);
+      
+      if (hasExtension || segments.length > 2) {
+        // This looks like a file path, convert //server/file.txt to /server/file.txt
+        pathStr = pathStr.substring(1);
       }
+      // Otherwise keep as UNC share like //server/share
+    }
 
-      // Handle UNC paths intelligently - preserve file shares, normalize URL paths
-      if (path.startsWith('//') && !path.startsWith('\\\\')) {
-        // If it has a file extension, it's likely a file path that should be normalized
-        // If it doesn't have an extension and has only 2 segments, it's likely a UNC share
-        const hasExtension = /\.[a-zA-Z0-9]{1,5}$/.test(path);
-        const segments = path.split('/').filter(s => s.length > 0);
-        
-        if (hasExtension || segments.length > 2) {
-          // This looks like a file path, convert //server/file.txt to /server/file.txt
-          path = path.substring(1);
+    // Remove URL scheme and domain if present
+    pathStr = pathStr.replace(/^https?:\/\/[^\/]+/, '');
+
+    // Remove domain prefix if this looks like a URL path without scheme
+    if (pathStr.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//)) {
+      pathStr = pathStr.replace(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//, '/');
+    }
+
+    return pathStr;
+  });
+
+  // 4. Filter out commonly ignored paths (e.g., node_modules).
+  const filteredPaths = cleanedPaths.filter(p => !isIgnored(p));
+
+  // 5. Filter out version numbers and other non-path patterns
+  const versionPattern = /^[a-zA-Z]?v?\d+(?:\.\d+)*$/;
+  const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+  const hashPattern = /^[a-f0-9]{7,40}$/i;
+  const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  // const urlDomainPattern = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/; // Only filter pure domains, not paths
+
+const validPaths = filteredPaths.filter(p => {
+    // Filter out multi-line strings and very long strings
+    if (p.includes('\n') || p.length > 200) {
+      return false;
+    }
+    
+    // Filter out function calls and method names specifically
+    if (p.includes('.') && !p.includes('/') && !p.includes('\\')) {
+      // This could be a function call like 'initActions.setAnalysisResults'
+      // But keep actual filenames like 'file.txt'
+      const parts = p.split('.');
+      if (parts.length > 1) {
+        const lastPart = parts[parts.length - 1];
+        // If the last part doesn't look like a file extension, it's probably a function call
+        if (!/^[a-zA-Z0-9]{1,5}$/.test(lastPart || '') ||
+            ['setAnalysisResults', 'updateGitignore'].includes(lastPart || '')) {
+          return false;
         }
-        // Otherwise keep as UNC share like //server/share
       }
-
-      // Remove URL scheme and domain if present
-      path = path.replace(/^https?:\/\/[^\/]+/, '');
-
-      // Remove domain prefix if this looks like a URL path without scheme
-      if (path.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//)) {
-        path = path.replace(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//, '/');
-      }
-
-      return path;
-    });
-
-    // 4. Filter out commonly ignored paths (e.g., node_modules).
-    const filteredPaths = cleanedPaths.filter(p => !isIgnored(p));
-
-    // 5. Filter out version numbers and other non-path patterns
-    const versionPattern = /^[a-zA-Z]?v?\d+(?:\.\d+)*$/;
-    const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-    const hashPattern = /^[a-f0-9]{7,40}$/i;
-    const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    // const urlDomainPattern = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/; // Only filter pure domains, not paths
-
-  const validPaths = filteredPaths.filter(p => {
-      // Filter out multi-line strings and very long strings
-      if (p.includes('\n') || p.length > 200) {
-        return false;
-      }
-      
-      // Filter out function calls and method names specifically
-      if (p.includes('.') && !p.includes('/') && !p.includes('\\')) {
-        // This could be a function call like 'initActions.setAnalysisResults'
-        // But keep actual filenames like 'file.txt'
-        const parts = p.split('.');
-        if (parts.length > 1) {
-          const lastPart = parts[parts.length - 1];
-          // If the last part doesn't look like a file extension, it's probably a function call
-          if (!/^[a-zA-Z0-9]{1,5}$/.test(lastPart || '') ||
-              ['setAnalysisResults', 'updateGitignore'].includes(lastPart || '')) {
-            return false;
-          }
-        }
-      }
-      
-      // Filter out import statements and module references that appear in TypeScript errors
-      if (p.startsWith('"') && p.endsWith('"')) {
-        // Always filter quoted strings - they're usually import paths in error messages
-        return false;
-      }
-      
-      // Filter out relative import module references without file extensions
-      if ((p.startsWith('./') || p.startsWith('../')) && !p.includes(' ')) {
-        // If it doesn't have a file extension and is short, it's likely a module import
-        if (!/\.[a-zA-Z0-9]{1,5}$/.test(p) && p.split('/').length <= 3) {
+    }
+    
+    // Filter out import statements and module references that appear in TypeScript errors
+    if (p.startsWith('"') && p.endsWith('"')) {
+      // Always filter quoted strings - they're usually import paths in error messages
+      return false;
+    }
+    
+    // Filter out relative import module references without file extensions
+    if ((p.startsWith('./') || p.startsWith('../')) && !p.includes(' ')) {
+      // If it doesn't have a file extension and is short, it's likely a module import
+      if (!/\.[a-zA-Z0-9]{1,5}$/.test(p) && p.split('/').length <= 3) {
           return false;
         }
       }
 
-      return !versionPattern.test(p) &&
-             !uuidPattern.test(p) &&
-             !hashPattern.test(p) &&
-             !emailPattern.test(p) &&
-             p.trim() !== '';
-    });
+    return !versionPattern.test(p) &&
+           !uuidPattern.test(p) &&
+           !hashPattern.test(p) &&
+           !emailPattern.test(p) &&
+           p.trim() !== '';
+  });
 
-    // 6. Fix split paths that contain parentheses
-    const fixedPaths = fixSplitPaths(validPaths);
-
-    // 7. (Optional) Filter for unique paths.
-    const uniquePaths = unique ? Array.from(new Set(fixedPaths)) : fixedPaths;
-
-    // 8. (Optional) Resolve paths to be absolute.
-    const resolvedPaths = absolute
-      ? uniquePaths.map(p => path.resolve(cwd, p))
-      : uniquePaths;
-
-    return resolvedPaths;
-  };
-};
+  // 6. Fix split paths that contain parentheses
+  const fixedPaths = fixSplitPaths(validPaths);
+  return fixedPaths;
+}
 
 /**
  * Fixes paths that were incorrectly split due to parentheses in the middle.
@@ -273,14 +317,39 @@ function fixSplitPaths(paths: string[]): string[] {
 }
 
 /**
- * Extracts potential file paths from a blob of text using a configurable pipeline.
+ * Extracts potential file paths from a blob of text using a configurable strategy.
  * @param text The text to search within.
  * @param opts Configuration options for extraction.
- * @returns An array of found file paths.
+ * @returns A promise that resolves to an array of found file paths.
  */
-export function extractPaths(text: string, opts: Options = {}): string[] {
-  const extractor = createPathExtractionPipeline(opts);
-  return extractor(text);
+export async function extractPaths(
+  text: string,
+  opts: Options = {},
+): Promise<string[]> {
+  const {
+    absolute = false,
+    cwd = process.cwd(),
+    unique = true,
+    strategy = 'fuzzy',
+  } = opts;
+
+  let combinedPaths: string[] = [];
+
+  if (strategy === 'regex' || strategy === 'both') {
+    combinedPaths.push(...extractPathsWithRegex(text));
+  }
+
+  if (strategy === 'fuzzy' || strategy === 'both') {
+    combinedPaths.push(...(await extractPathsWithFuzzy(text, cwd)));
+  }
+
+  const uniquePaths = unique ? Array.from(new Set(combinedPaths)) : combinedPaths;
+
+  const resolvedPaths = absolute
+    ? uniquePaths.map(p => path.resolve(cwd, p))
+    : uniquePaths;
+
+  return resolvedPaths;
 }
 
 /**

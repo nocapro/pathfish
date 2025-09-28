@@ -1,5 +1,5 @@
 - name: "Basic pipeline: extract and format as pretty JSON"
-  options: { format: 'json', pretty: true }
+  options: { format: 'json', pretty: true, strategy: 'regex' }
   input: "File is src/index.ts and another is ./README.md"
   files:
     "src/index.ts": ""
@@ -11,7 +11,7 @@
     ]
 
 - name: "Pipeline with verification, filtering out non-existent paths"
-  options: { format: 'list', verify: true }
+  options: { format: 'list', verify: true, strategy: 'regex' }
   input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
   files:
     'file1.txt': 'content'
@@ -21,13 +21,13 @@
     dir/file2.log
 
 - name: "Pipeline with absolute path conversion"
-  options: { absolute: true, format: 'json', pretty: false, verify: false } # verification disabled
+  options: { absolute: true, format: 'json', pretty: false, verify: false, strategy: 'regex' } # verification disabled
   input: "Relative path: src/main.js and ./index.html"
   files: {}
   expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
 
 - name: "Pipeline with verification and absolute path conversion"
-  options: { absolute: true, format: 'yaml', verify: true }
+  options: { absolute: true, format: 'yaml', verify: true, strategy: 'regex' }
   input: "Real: src/app.ts. Fake: src/fake.ts"
   files:
     'src/app.ts': 'export default {}'
@@ -35,7 +35,7 @@
     - {{CWD}}/src/app.ts
 
 - name: "Pipeline with different format (yaml) and no unique"
-  options: { format: 'yaml', unique: false, verify: false }
+  options: { format: 'yaml', unique: false, verify: false, strategy: 'regex' }
   input: "path: a.txt, again: a.txt"
   files: {}
   expected: |
@@ -43,13 +43,13 @@
     - a.txt
 
 - name: "Pipeline should produce empty output for no matches"
-  options: { format: 'json' }
+  options: { format: 'json', strategy: 'regex' }
   input: "Just some regular text without any paths."
   files: {}
   expected: "[]"
 
 - name: "Pipeline with complex paths and query strings"
-  options: { format: 'list', verify: false }
+  options: { format: 'list', verify: false, strategy: 'regex' }
   input: "Path1: /a/b.css?v=1 Path2: src/d.ts#foo Path3: user@domain.com"
   files: {}
   expected: |
@@ -57,9 +57,18 @@
     src/d.ts
 
 - name: "Pipeline with quoted path with spaces and verification"
-  options: { format: 'list', verify: true }
+  options: { format: 'list', verify: true, strategy: 'regex' }
   input: 'Log: "real dir/real file.txt" and "fake dir/fake file.txt"'
   files:
     'real dir/real file.txt': 'content'
   expected: |
     real dir/real file.txt
+
+- name: "Pipeline with fuzzy strategy and verification"
+  options: { format: 'list', verify: true, strategy: 'fuzzy' }
+  input: 'I was editing engine.ts and also missing.ts'
+  files:
+    'src/engine.ts': 'export {}'
+    'src/core.ts': 'export {}'
+  expected: |
+    src/engine.ts

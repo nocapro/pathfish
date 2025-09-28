@@ -1,0 +1,115 @@
+uuid: 13ed1384-5f80-4573-b26a-93a9d4de1e3e
+projectId: pathfish
+createdAt: '2025-09-28T23:54:39.095Z'
+gitCommitMsg: >-
+  fix(engine): import Strategy type for local scope
+
+  The `Strategy` type was being used within the `PipelineOptions` type
+  definition in `src/engine.ts` without being imported. The existing `export
+  type { Strategy } from './core'` statement only re-exports the type but does
+  not make it available within the module's scope.
+
+  This commit adds `type Strategy` to the import statement from `./core` to
+  resolve the "Cannot find name 'Strategy'" TypeScript error.
+promptSummary: >-
+  The user is asking to fix a TypeScript error `Cannot find name 'Strategy'` in
+  `src/engine.ts`.
+reasoning:
+  - >-
+    Of course. The TypeScript compiler is correct: the `Strategy` type is being
+    used in `src/engine.ts` without being imported into that file's scope.
+  - >-
+    The line `export type { Strategy } from './core';` only re-exports the type
+    for other modules that import from `engine.ts` (like `cli.ts`), but it
+    doesn't make `Strategy` available for use within `engine.ts` itself.
+  - >-
+    To fix this, I'll add `type Strategy` to the existing import from `./core`.
+    This will bring the type into the local scope, resolving the error, while
+    keeping the re-export in place for other modules.
+  - 'Here is the change:'
+operations:
+  - type: write
+    path: src/engine.ts
+    content: >
+      <<<<<<< SEARCH
+
+      import { extractPaths, verifyPaths, type Options } from './core';
+
+      =======
+
+      import { extractPaths, verifyPaths, type Options, type Strategy } from
+      './core';
+
+      >>>>>>> REPLACE
+    patchStrategy: search-replace
+snapshot:
+  src/engine.ts: |-
+    import { extractPaths, verifyPaths, type Options } from './core';
+    import { createFormatter, type Format } from './utils';
+    export type { Strategy } from './core';
+
+    /**
+     * Combined options for the entire path processing pipeline.
+     */
+    export type PipelineOptions = Options & {
+      /**
+       * When false, disables filtering of paths that do not exist on disk.
+       * @default true
+       */
+      verify?: boolean;
+      /**
+       * The output format.
+       * @default 'json'
+       */
+      format?: Format;
+      /**
+       * Pretty-print JSON output.
+       * @default true
+       */
+      pretty?: boolean;
+      /**
+       * The path extraction strategy to use.
+       * @default 'fuzzy'
+       */
+      strategy?: Strategy;
+    };
+
+    /**
+     * Executes the full path extraction and formatting pipeline.
+     * This is the core engine of pathfish, decoupled from the CLI.
+     * @param text The input text to process.
+     * @param options Configuration for the pipeline.
+     * @returns A promise that resolves to the formatted string output.
+     */
+    export async function runPipeline(
+      text: string,
+      options: PipelineOptions = {},
+    ): Promise<string> {
+      const {
+        verify: shouldVerify = true,
+        format: formatType = 'json',
+        pretty = true,
+        ...extractOptions
+      } = options;
+
+      // 1. Extract paths from the text using the core extractor.
+      const initialPaths = await extractPaths(text, { unique: true, ...extractOptions });
+
+      // 2. (Optional) Verify that the paths actually exist on disk.
+      const verifiedPaths = shouldVerify
+        ? await verifyPaths(initialPaths, extractOptions.cwd)
+        : initialPaths;
+
+      // 3. Format the resulting paths into the desired output string.
+      const format = createFormatter(formatType, pretty);
+      const formattedOutput = format(verifiedPaths);
+
+      return formattedOutput;
+    }
+approved: true
+linesAdded: null
+linesRemoved: null
+linesDifference: null
+gitCommittedAt: null
+status: committed
+id: 33

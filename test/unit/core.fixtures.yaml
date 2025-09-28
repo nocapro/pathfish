@@ -220,7 +220,7 @@
 
       src/stores/init.store.ts:30:99
         30         setAnalysisResults: (projectId: string, gitignoreFound: boolean, gitInitialized: boolean, configExists: boolean) => void;
-                                      ~~~~~~~~~~~~~~~~~~~~~
+                                                                                                             ~~~~~~~~~~~~~~~~~~~~~
         An argument for 'configExists' was not provided.
 
     src/services/copy.service.ts:5:10 - error TS2305: Module '"./fs.service"' has no exported member 'FileSystemService'.
@@ -232,10 +232,11 @@
 
     10 import { STATE_DIRECTORY_NAME, PROMPT_FILE_NAME } from '../constants/fs.constants';
                                       ~~~~~~~~~~~~~~~~
+
     src/services/init.service.ts:20:25 - error TS2554: Expected 1 arguments, but got 0.
 
     20         await FsService.updateGitignore();
-                               ~~~~~~~~~~~~~~~~
+                               ~~~~~~~~~~~~~~~
 
       src/services/fs.service.ts:42:32
         42 const updateGitignore = async (cwd: string): Promise<{ created: boolean, updated: boolean }> => {

@@ -35,8 +35,11 @@ describe('engine.ts (Integration)', async () => {
           // Use the temp directory as the CWD for the pipeline
           const result = await runPipeline(input, { ...options, cwd: tempDir });
 
-          // Replace placeholder in expected output with the actual temp dir path
-          const expectedWithCwd = expected.replaceAll('{{CWD}}', tempDir).trim();
+          // Replace placeholder in expected output with the actual temp dir path.
+          // Trim both results to handle trailing newlines from multiline strings in YAML.
+          const expectedWithCwd = expected
+            .replaceAll('{{CWD}}', tempDir)
+            .trim();
 
           expect(result.trim()).toEqual(expectedWithCwd);
         });

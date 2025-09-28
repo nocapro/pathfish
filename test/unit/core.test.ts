@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import path from 'node:path';
-import { extractPaths, verifyPaths, type Options } from '../../dist/index.js';
+import { extractPaths, verifyPaths, type Options } from '../../dist/core.js';
 import {
   loadYamlFixture,
   setupTestDirectory,
@@ -11,6 +11,7 @@ type ExtractPathsTestCase = {
   name: string;
   options: Options;
   input: string;
+  files?: { [path: string]: string };
   expected: string[];
 };
 
@@ -18,11 +19,22 @@ describe('core.ts', () => {
   describe('extractPaths', async () => {
     const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
 
-    for (const { name, options, input, expected } of fixtures) {
-      it(name, () => {
-        const result = extractPaths(input, options);
+    for (const { name, options, input, files, expected } of fixtures) {
+      it(name, async () => {
+        let tempDir: string | undefined;
+        let cwd = process.cwd();
+        if (files && Object.keys(files).length > 0) {
+          tempDir = await setupTestDirectory(files);
+          cwd = tempDir;
+        }
+
+        const result = await extractPaths(input, { ...options, cwd });
         // Sort for stable comparison
         expect(result.sort()).toEqual(expected.sort());
+
+        if (tempDir) {
+          await cleanupTestDirectory(tempDir);
+        }
       });
     }
   });

@@ -3,7 +3,7 @@
 import mri from 'mri';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runPipeline, type PipelineOptions } from './engine';
+import { runPipeline, type PipelineOptions, type Strategy } from './engine';
 import { copyToClipboard, type Format } from './utils';
 import { readFileSync } from 'node:fs';
 
@@ -34,6 +34,7 @@ Usage:
   cat [file] | pathfish [options]
 
 Options:
+  --strategy <strat> Path extraction strategy: regex, fuzzy, both (default: fuzzy)
   --format <format>  Output format: json, yaml, list (default: json)
   --pretty           Pretty-print JSON output (default: true)
   --absolute         Convert all paths to absolute
@@ -53,6 +54,7 @@ type CliArgs = {
   verify?: boolean; // mri sets this to false for --no-verify
   copy?: boolean;
   format?: string;
+  strategy?: string;
   cwd?: string;
 };
 
@@ -64,11 +66,12 @@ type CliArgs = {
 async function run() {
   const args: CliArgs = mri(process.argv.slice(2), {
     boolean: ['help', 'version', 'pretty', 'absolute', 'copy'],
-    string: ['format', 'cwd'],
+    string: ['format', 'cwd', 'strategy'],
     alias: { h: 'help', v: 'version' },
     default: {
       pretty: true,
       format: 'json',
+      strategy: 'fuzzy',
     },
   });
 
@@ -82,6 +85,13 @@ async function run() {
     return;
   }
 
+  const strategy = args.strategy as Strategy;
+  if (strategy && !['regex', 'fuzzy', 'both'].includes(strategy)) {
+    console.error(
+      `Error: Invalid strategy '${strategy}'. Must be one of: regex, fuzzy, both.`
+    );
+    process.exit(1);
+  }
   const inputFile = args._[0];
   let inputText: string;
 
@@ -105,6 +115,7 @@ async function run() {
     verify: args.verify !== false, // Default to true, false only on --no-verify
     format: args.format as Format,
     pretty: args.pretty,
+    strategy: strategy,
   };
 
   

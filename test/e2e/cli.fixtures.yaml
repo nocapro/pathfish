@@ -9,7 +9,7 @@
   exit_code: 0
 
 - name: "should read from stdin and output pretty json by default"
-  args: []
+  args: ["--strategy", "regex"]
   stdin: "path is src/index.ts"
   files:
     "src/index.ts": ""
@@ -19,14 +19,14 @@
     ]
 
 - name: "should output compact json with --pretty=false"
-  args: ["--pretty=false"]
+  args: ["--pretty=false", "--strategy", "regex"]
   stdin: "path is src/index.ts"
   files:
     "src/index.ts": ""
   expected_stdout: '["src/index.ts"]'
 
 - name: "should read from a file argument"
-  args: ["input.log"]
+  args: ["input.log", "--strategy", "regex"]
   files:
     "input.log": "path in file is src/index.ts"
     "src/index.ts": ""
@@ -36,7 +36,7 @@
     ]
 
 - name: "should output yaml with --format yaml"
-  args: ["--format", "yaml"]
+  args: ["--format", "yaml", "--strategy", "regex"]
   stdin: "src/app.js and src/style.css"
   files:
     "src/app.js": ""
@@ -46,7 +46,7 @@
     - src/style.css
 
 - name: "should output a list with --format list"
-  args: ["--format", "list"]
+  args: ["--format", "list", "--strategy", "regex"]
   stdin: "src/app.js and src/style.css"
   files:
     "src/app.js": ""
@@ -56,14 +56,14 @@
     src/style.css
 
 - name: "should filter out non-existing files by default"
-  args: ["--format", "list"]
+  args: ["--format", "list", "--strategy", "regex"]
   stdin: "good: file1.txt, bad: missing.txt"
   files:
     "file1.txt": "content"
   expected_stdout: "file1.txt"
 
 - name: "should include non-existing files with --no-verify"
-  args: ["--no-verify", "--format", "list"]
+  args: ["--no-verify", "--format", "list", "--strategy", "regex"]
   stdin: "good: file1.txt, bad: missing.txt"
   files:
     "file1.txt": "content"
@@ -72,26 +72,26 @@
     missing.txt
 
 - name: "should make paths absolute with --absolute"
-  args: ["--absolute", "--format", "list", "--no-verify"]
+  args: ["--absolute", "--format", "list", "--no-verify", "--strategy", "regex"]
   stdin: "relative/path.js"
   expected_stdout: "{{CWD}}/relative/path.js"
 
 - name: "should use specified --cwd for absolute paths"
-  args: ["--no-verify", "--absolute", "--format", "list", "--cwd", "{{CWD}}/fake-root"]
+  args: ["--no-verify", "--absolute", "--format", "list", "--strategy", "regex", "--cwd", "{{CWD}}/fake-root"]
   stdin: "relative/path.js"
   files: # create the fake root so it's a valid directory
     "fake-root/placeholder.txt": ""
   expected_stdout: "{{CWD}}/fake-root/relative/path.js"
 
 - name: "should work with --copy flag (output is unchanged)"
-  args: ["--copy", "--format", "list"]
+  args: ["--copy", "--format", "list", "--strategy", "regex"]
   stdin: "src/main.ts"
   files:
     "src/main.ts": ""
   expected_stdout: "src/main.ts"
 
 - name: "should handle a combination of flags"
-  args: ["data.log", "--absolute", "--format", "yaml"]
+  args: ["data.log", "--absolute", "--format", "yaml", "--strategy", "regex"]
   stdin: "" # Reading from file
   files:
     "data.log": "valid: existing.js, invalid: missing.js"
@@ -104,12 +104,12 @@
   exit_code: 1
 
 - name: "should produce empty output for no matches"
-  args: ["--format", "list"]
+  args: ["--format", "list", "--strategy", "regex"]
   stdin: "no paths here"
   expected_stdout: ""
 
 - name: "should handle complex paths from stdin"
-  args: ["--no-verify", "--format", "list"]
+  args: ["--no-verify", "--format", "list", "--strategy", "regex"]
   stdin: "url.com/path/to/file.js?v=42 and a/b/c.py#L10"
   files: {}
   expected_stdout: |
@@ -117,8 +117,16 @@
     a/b/c.py
 
 - name: "should handle quoted paths with spaces from stdin"
-  args: ["--no-verify", "--format", "list"]
+  args: ["--no-verify", "--format", "list", "--strategy", "regex"]
   stdin: 'Found file in "path with spaces/file.txt"'
   files: {}
   expected_stdout: |
     path with spaces/file.txt
+
+- name: "should use fuzzy strategy by default"
+  args: ["--format", "list"]
+  stdin: "Just a mention of cli.ts should be enough."
+  files:
+    "src/cli.ts": "content"
+    "README.md": "content"
+  expected_stdout: "src/cli.ts"
