@@ -23,22 +23,24 @@ export type Options = {
 
 // This regex finds file paths, including optional line/column numbers. It's
 // designed to be comprehensive, supporting Windows, Unix, absolute, and
-// relative paths. It's composed of two main parts:
-// 1. The first part finds paths that contain at least one directory separator
-//    (e.g., `src/core.ts`, `./dist`, `/var/log/syslog`). This allows it to
-//    find paths that don't have a file extension.
-// 2. The second part finds standalone filenames that *do* have a file extension
-//    (e.g., `README.md`, `bun.lockb`), using word boundaries.
-// This new regex improves Windows path handling and is structured for clarity.
+// relative paths. The regex is structured to match complete paths:
+// 1. Windows absolute paths (C:\path\to\file)
+// 2. Unix absolute paths (/path/to/file)
+// 3. Relative paths with separators (src/file.ts, ./dist, ../parent)
+// 4. Standalone filenames with extensions (README.md, package.json)
 const PATH_REGEX = new RegExp(
   [
-    // Part 1: Paths with directory separators. Two main cases:
-    // 1a: Absolute paths (e.g., /foo/bar, C:\foo\bar)
-    /(?:[a-zA-Z]:)?(?:[\\\/][\w.-]+)+/.source,
-    // 1b: Relative paths with separators (e.g., src/foo, ./foo, ../foo)
-    /[\w.-]+(?:[\\\/][\w.-]+)+/.source,
-    // Part 2: Standalone filenames with extensions (e.g., README.md)
-    /\b[\w.-]+\.\w+\b/.source,
+    // Windows absolute paths: C:\path\to\file (must come first to avoid partial matches)
+    /[a-zA-Z]:[\\\/][^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+
+    // Unix absolute paths: /path/to/file
+    /\/[^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+
+    // Relative paths with separators: ./file, ../file, src/file
+    /(?:\.[\\/]|[^\s\n]+[\\/])[^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+
+    // Standalone filenames with extensions: file.txt, README.md
+    /\b[^\s\n]+\.[a-zA-Z]+\b/.source,
   ].join('|'),
   'g',
 );
@@ -59,7 +61,8 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
     // 2. Clean up matches: remove trailing line/col numbers and common punctuation.
     const cleanedPaths = matches.map(p =>
       p.replace(/(?::\d+)+$/, '') // a/b/c:10:5 -> a/b/c
-       .replace(/[.,;]$/, ''),    // a/b/c, -> a/b/c
+       .replace(/[.,;]$/, '')     // a/b/c, -> a/b/c
+       .replace(/\\\\/g, '\\')    // Normalize double backslashes to single
     );
 
     // 3. (Optional) Filter for unique paths.

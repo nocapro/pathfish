@@ -18,27 +18,29 @@ describe('engine.ts (Integration)', async () => {
   const fixtures = await loadYamlFixture<EngineTestCase[]>('integration/engine.fixtures.yaml');
 
   describe('runPipeline', () => {
-    let tempDir: string;
+    // Use a separate describe block for each test case to avoid closure issues
+    fixtures.forEach(({ name, options, input, files, expected }) => {
+      describe(name, () => {
+        let tempDir: string;
 
-    for (const { name, options, input, files, expected } of fixtures) {
-      // Each test case gets its own directory setup
-      beforeEach(async () => {
-        tempDir = await setupTestDirectory(files);
+        beforeEach(async () => {
+          tempDir = await setupTestDirectory(files);
+        });
+
+        afterEach(async () => {
+          await cleanupTestDirectory(tempDir);
+        });
+
+        it('should execute correctly', async () => {
+          // Use the temp directory as the CWD for the pipeline
+          const result = await runPipeline(input, { ...options, cwd: tempDir });
+
+          // Replace placeholder in expected output with the actual temp dir path
+          const expectedWithCwd = expected.replaceAll('{{CWD}}', tempDir).trim();
+
+          expect(result.trim()).toEqual(expectedWithCwd);
+        });
       });
-
-      afterEach(async () => {
-        await cleanupTestDirectory(tempDir);
-      });
-
-      it(name, async () => {
-        // Use the temp directory as the CWD for the pipeline
-        const result = await runPipeline(input, { ...options, cwd: tempDir });
-
-        // Replace placeholder in expected output with the actual temp dir path
-        const expectedWithCwd = expected.replaceAll('{{CWD}}', tempDir).trim();
-
-        expect(result.trim()).toEqual(expectedWithCwd);
-      });
-    }
+    });
   });
 });

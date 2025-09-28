@@ -28,6 +28,7 @@ export async function setupTestDirectory(files: {
   const tempDir = await fs.mkdtemp(
     path.join(os.tmpdir(), 'pathfish-test-'),
   );
+
   for (const [filePath, content] of Object.entries(files)) {
     const absolutePath = path.join(tempDir, filePath);
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
@@ -57,14 +58,17 @@ export async function runCli(
   cwd?: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
+
   const proc = Bun.spawn(['bun', 'run', cliPath, ...args], {
     stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
     cwd,
+    stderr: 'pipe',
+    stdout: 'pipe',
   });
 
+  const exitCode = await proc.exited;
   const stdout = await new Response(proc.stdout).text();
   const stderr = await new Response(proc.stderr).text();
-  const exitCode = await proc.exited;
 
   return { stdout, stderr, exitCode };
 }

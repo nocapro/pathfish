@@ -67,9 +67,15 @@ async function run() {
   }
 
   const inputFile = args._[0];
-  const inputText = inputFile
-    ? await Bun.file(inputFile).text()
-    : await Bun.stdin.text();
+  let inputText: string;
+
+  try {
+    inputText = inputFile
+      ? await Bun.file(path.resolve(args.cwd || process.cwd(), inputFile)).text()
+      : await Bun.stdin.text();
+  } catch (err) {
+    throw err;
+  }
 
   // Map CLI arguments to engine pipeline options.
   const options: PipelineOptions = {
@@ -80,6 +86,7 @@ async function run() {
     pretty: args.pretty,
   };
 
+  
   const result = await runPipeline(inputText, options);
   console.log(result);
 
@@ -89,7 +96,6 @@ async function run() {
 
 run().catch(err => {
   const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-  // Use console.error to write to stderr
-  console.error(`\x1b[31mError: ${errorMessage}\x1b[0m`);
+  process.stderr.write(`Error: ${errorMessage}\n`);
   process.exit(1);
 });

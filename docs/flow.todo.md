@@ -10,7 +10,9 @@ add more comprehensive test cases and coverage. also add more complex fixtures d
 
 auto ignore files and dirs: like .gitignore package-lock.json node_modules .bun.lockb etc
 
-===
+dont forget to add the test cases
+
+=== DONE
 
 the concept of `verify is exist` actually to output paths that really exist and are valid and this should be default behavior. so please update test cases and logic
 
@@ -32,6 +34,7 @@ create comprehensive bun test cases to verify readme.md implementation;
 4. create test/e2e/[domain].fixtures.yaml, test/unit/[domain].fixtures.yaml, test/integration/[domain].fixtures.yaml files
 4. use real cli execution for e2e cases
 5. use before all, after all, before each, after each, describe, it: from bun test
+6. each cases should be isolated and on every run no any left over remain, even dirs
 
 === DONE
 

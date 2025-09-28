@@ -23,9 +23,8 @@ describe('cli.ts (E2E)', async () => {
   const fixtures = await loadYamlFixture<CliTestCase[]>('e2e/cli.fixtures.yaml');
 
   describe('CLI execution', () => {
-    let tempDir: string;
-
-    for (const testCase of fixtures) {
+    // Use a separate describe block for each test case to avoid closure issues
+    fixtures.forEach((testCase) => {
       const {
         name,
         args,
@@ -37,58 +36,61 @@ describe('cli.ts (E2E)', async () => {
         exit_code = 0,
       } = testCase;
 
-      // Each test case gets its own directory setup
-      beforeEach(async () => {
-        tempDir = await setupTestDirectory(files);
-      });
+      describe(name, () => {
+        let tempDir: string;
 
-      afterEach(async () => {
-        await cleanupTestDirectory(tempDir);
-      });
-
-      it(name, async () => {
-        const fileArgNames = Object.keys(files);
-
-        // Resolve file paths and placeholders in args
-        const processedArgs = args.map(arg => {
-          // If the arg is a file created for the test, use its relative path.
-          // The CLI process runs inside tempDir, so relative paths work correctly.
-          if (fileArgNames.includes(arg)) {
-            return arg;
-          }
-          // For other args (like --cwd), replace the placeholder.
-          return arg.replaceAll('{{CWD}}', tempDir);
+        beforeEach(async () => {
+          tempDir = await setupTestDirectory(files);
         });
 
-        const { stdout, stderr, exitCode } = await runCli(
-          processedArgs,
-          stdin,
-          tempDir, // Run the CLI process inside the temp directory
-        );
+        afterEach(async () => {
+          await cleanupTestDirectory(tempDir);
+        });
 
-        // Assert exit code
-        expect(exitCode).toBe(exit_code);
+        it('should execute correctly', async () => {
+          const fileArgNames = Object.keys(files);
 
-        // Assert stdout
-        if (expected_stdout !== undefined) {
-          const processed_expected_stdout = expected_stdout
-            .replaceAll('{{CWD}}', tempDir)
-            .trim();
-          expect(stdout.trim()).toEqual(processed_expected_stdout);
-        }
-        if (expected_stdout_contains !== undefined) {
-          const expected_text =
-            expected_stdout_contains === 'v'
-              ? `v${version}`
-              : expected_stdout_contains;
-          expect(stdout).toContain(expected_text);
-        }
+          // Resolve file paths and placeholders in args
+          const processedArgs = args.map(arg => {
+            // If the arg is a file created for the test, use its relative path.
+            // The CLI process runs inside tempDir, so relative paths work correctly.
+            if (fileArgNames.includes(arg)) {
+              return arg;
+            }
+            // For other args (like --cwd), replace the placeholder.
+            return arg.replaceAll('{{CWD}}', tempDir);
+          });
 
-        // Assert stderr
-        if (expected_stderr_contains !== undefined) {
-          expect(stderr).toContain(expected_stderr_contains);
-        }
+          const { stdout, stderr, exitCode } = await runCli(
+            processedArgs,
+            stdin,
+            tempDir, // Run the CLI process inside the temp directory
+          );
+
+          // Assert exit code
+          expect(exitCode).toBe(exit_code);
+
+          // Assert stdout
+          if (expected_stdout !== undefined) {
+            const processed_expected_stdout = expected_stdout
+              .replaceAll('{{CWD}}', tempDir)
+              .trim();
+            expect(stdout.trim()).toEqual(processed_expected_stdout);
+          }
+          if (expected_stdout_contains !== undefined) {
+            const expected_text =
+              expected_stdout_contains === 'v'
+                ? `v${version}`
+                : expected_stdout_contains;
+            expect(stdout).toContain(expected_text);
+          }
+
+          // Assert stderr
+          if (expected_stderr_contains !== undefined) {
+            expect(stderr).toContain(expected_stderr_contains);
+          }
+        });
       });
-    }
+    });
   });
 });

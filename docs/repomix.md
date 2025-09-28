@@ -204,172 +204,6 @@ export async function copyToClipboard(text: string): Promise<void> {
 }
 ````
 
-## File: test/e2e/cli.fixtures.yaml
-````yaml
-- name: "should show help text with --help"
-  args: ["--help"]
-  expected_stdout_contains: "Usage:"
-  exit_code: 0
-
-- name: "should show version with --version"
-  args: ["--version"]
-  expected_stdout_contains: "v" # Will be checked against package.json version
-  exit_code: 0
-
-- name: "should read from stdin and output pretty json by default"
-  args: []
-  stdin: "path is src/index.ts"
-  files:
-    "src/index.ts": ""
-  expected_stdout: |
-    [
-      "src/index.ts"
-    ]
-
-- name: "should output compact json with --pretty=false"
-  args: ["--pretty=false"]
-  stdin: "path is src/index.ts"
-  files:
-    "src/index.ts": ""
-  expected_stdout: '["src/index.ts"]'
-
-- name: "should read from a file argument"
-  args: ["input.log"]
-  files:
-    "input.log": "path in file is src/index.ts"
-    "src/index.ts": ""
-  expected_stdout: |
-    [
-      "src/index.ts"
-    ]
-
-- name: "should output yaml with --format yaml"
-  args: ["--format", "yaml"]
-  stdin: "src/app.js and src/style.css"
-  files:
-    "src/app.js": ""
-    "src/style.css": ""
-  expected_stdout: |
-    - src/app.js
-    - src/style.css
-
-- name: "should output a list with --format list"
-  args: ["--format", "list"]
-  stdin: "src/app.js and src/style.css"
-  files:
-    "src/app.js": ""
-    "src/style.css": ""
-  expected_stdout: |
-    src/app.js
-    src/style.css
-
-- name: "should filter out non-existing files by default"
-  args: ["--format", "list"]
-  stdin: "good: file1.txt, bad: missing.txt"
-  files:
-    "file1.txt": "content"
-  expected_stdout: "file1.txt"
-
-- name: "should include non-existing files with --no-verify"
-  args: ["--no-verify", "--format", "list"]
-  stdin: "good: file1.txt, bad: missing.txt"
-  files:
-    "file1.txt": "content"
-  expected_stdout: |
-    file1.txt
-    missing.txt
-
-- name: "should make paths absolute with --absolute"
-  args: ["--absolute", "--format", "list", "--no-verify"]
-  stdin: "relative/path.js"
-  expected_stdout: "{{CWD}}/relative/path.js"
-
-- name: "should use specified --cwd for absolute paths"
-  args: ["--no-verify", "--absolute", "--format", "list", "--cwd", "{{CWD}}/fake-root"]
-  stdin: "relative/path.js"
-  files: # create the fake root so it's a valid directory
-    "fake-root/placeholder.txt": ""
-  expected_stdout: "{{CWD}}/fake-root/relative/path.js"
-
-- name: "should work with --copy flag (output is unchanged)"
-  args: ["--copy", "--format", "list"]
-  stdin: "src/main.ts"
-  files:
-    "src/main.ts": ""
-  expected_stdout: "src/main.ts"
-
-- name: "should handle a combination of flags"
-  args: ["data.log", "--absolute", "--format", "yaml"]
-  stdin: "" # Reading from file
-  files:
-    "data.log": "valid: existing.js, invalid: missing.js"
-    "existing.js": "export {}"
-  expected_stdout: "- {{CWD}}/existing.js"
-
-- name: "should report error and exit 1 if input file does not exist"
-  args: ["nonexistent.log"]
-  expected_stderr_contains: "Error:"
-  exit_code: 1
-
-- name: "should produce empty output for no matches"
-  args: ["--format", "list"]
-  stdin: "no paths here"
-  expected_stdout: ""
-````
-
-## File: test/integration/engine.fixtures.yaml
-````yaml
-- name: "Basic pipeline: extract and format as pretty JSON"
-  options: { format: 'json', pretty: true }
-  input: "File is src/index.ts and another is ./README.md"
-  files:
-    "src/index.ts": ""
-    "./README.md": ""
-  expected: |
-    [
-      "src/index.ts",
-      "./README.md"
-    ]
-
-- name: "Pipeline with verification, filtering out non-existent paths"
-  options: { format: 'list', verify: true }
-  input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
-  files:
-    'file1.txt': 'content'
-    'dir/file2.log': 'log content'
-  expected: |
-    file1.txt
-    dir/file2.log
-
-- name: "Pipeline with absolute path conversion"
-  options: { absolute: true, format: 'json', pretty: false, verify: false } # verification disabled
-  input: "Relative path: src/main.js and ./index.html"
-  files: {}
-  expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
-
-- name: "Pipeline with verification and absolute path conversion"
-  options: { absolute: true, format: 'yaml', verify: true }
-  input: "Real: src/app.ts. Fake: src/fake.ts"
-  files:
-    'src/app.ts': 'export default {}'
-  expected: |
-    - {{CWD}}/src/app.ts
-
-- name: "Pipeline with different format (yaml) and no unique"
-  options: { format: 'yaml', unique: false, verify: false }
-  input: "path: a.txt, again: a.txt"
-  files: {}
-  expected: |
-    - a.txt
-    - a.txt
-
-- name: "Pipeline should produce empty output for no matches"
-  options: { format: 'json' }
-  input: "Just some regular text without any paths."
-  files: {}
-  expected: "[]"
-````
-
 ## File: test/integration/engine.test.ts
 ````typescript
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
@@ -538,6 +372,327 @@ describe('createFormatter', async () => {
     }
   }
 });
+````
+
+## File: test/e2e/cli.fixtures.yaml
+````yaml
+- name: "should show help text with --help"
+  args: ["--help"]
+  expected_stdout_contains: "Usage:"
+  exit_code: 0
+
+- name: "should show version with --version"
+  args: ["--version"]
+  expected_stdout_contains: "v" # Will be checked against package.json version
+  exit_code: 0
+
+- name: "should read from stdin and output pretty json by default"
+  args: []
+  stdin: "path is src/index.ts"
+  files:
+    "src/index.ts": ""
+  expected_stdout: |
+    [
+      "src/index.ts"
+    ]
+
+- name: "should output compact json with --pretty=false"
+  args: ["--pretty=false"]
+  stdin: "path is src/index.ts"
+  files:
+    "src/index.ts": ""
+  expected_stdout: '["src/index.ts"]'
+
+- name: "should read from a file argument"
+  args: ["input.log"]
+  files:
+    "input.log": "path in file is src/index.ts"
+    "src/index.ts": ""
+  expected_stdout: |
+    [
+      "src/index.ts"
+    ]
+
+- name: "should output yaml with --format yaml"
+  args: ["--format", "yaml"]
+  stdin: "src/app.js and src/style.css"
+  files:
+    "src/app.js": ""
+    "src/style.css": ""
+  expected_stdout: |
+    - src/app.js
+    - src/style.css
+
+- name: "should output a list with --format list"
+  args: ["--format", "list"]
+  stdin: "src/app.js and src/style.css"
+  files:
+    "src/app.js": ""
+    "src/style.css": ""
+  expected_stdout: |
+    src/app.js
+    src/style.css
+
+- name: "should filter out non-existing files by default"
+  args: ["--format", "list"]
+  stdin: "good: file1.txt, bad: missing.txt"
+  files:
+    "file1.txt": "content"
+  expected_stdout: "file1.txt"
+
+- name: "should include non-existing files with --no-verify"
+  args: ["--no-verify", "--format", "list"]
+  stdin: "good: file1.txt, bad: missing.txt"
+  files:
+    "file1.txt": "content"
+  expected_stdout: |
+    file1.txt
+    missing.txt
+
+- name: "should make paths absolute with --absolute"
+  args: ["--absolute", "--format", "list", "--no-verify"]
+  stdin: "relative/path.js"
+  expected_stdout: "{{CWD}}/relative/path.js"
+
+- name: "should use specified --cwd for absolute paths"
+  args: ["--no-verify", "--absolute", "--format", "list", "--cwd", "{{CWD}}/fake-root"]
+  stdin: "relative/path.js"
+  files: # create the fake root so it's a valid directory
+    "fake-root/placeholder.txt": ""
+  expected_stdout: "{{CWD}}/fake-root/relative/path.js"
+
+- name: "should work with --copy flag (output is unchanged)"
+  args: ["--copy", "--format", "list"]
+  stdin: "src/main.ts"
+  files:
+    "src/main.ts": ""
+  expected_stdout: "src/main.ts"
+
+- name: "should handle a combination of flags"
+  args: ["data.log", "--absolute", "--format", "yaml"]
+  stdin: "" # Reading from file
+  files:
+    "data.log": "valid: existing.js, invalid: missing.js"
+    "existing.js": "export {}"
+  expected_stdout: "- {{CWD}}/existing.js"
+
+- name: "should report error and exit 1 if input file does not exist"
+  args: ["nonexistent.log"]
+  expected_stderr_contains: "Error:"
+  exit_code: 1
+
+- name: "should produce empty output for no matches"
+  args: ["--format", "list"]
+  stdin: "no paths here"
+  expected_stdout: ""
+````
+
+## File: test/integration/engine.fixtures.yaml
+````yaml
+- name: "Basic pipeline: extract and format as pretty JSON"
+  options: { format: 'json', pretty: true }
+  input: "File is src/index.ts and another is ./README.md"
+  files:
+    "src/index.ts": ""
+    "./README.md": ""
+  expected: |
+    [
+      "src/index.ts",
+      "./README.md"
+    ]
+
+- name: "Pipeline with verification, filtering out non-existent paths"
+  options: { format: 'list', verify: true }
+  input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
+  files:
+    'file1.txt': 'content'
+    'dir/file2.log': 'log content'
+  expected: |
+    file1.txt
+    dir/file2.log
+
+- name: "Pipeline with absolute path conversion"
+  options: { absolute: true, format: 'json', pretty: false, verify: false } # verification disabled
+  input: "Relative path: src/main.js and ./index.html"
+  files: {}
+  expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
+
+- name: "Pipeline with verification and absolute path conversion"
+  options: { absolute: true, format: 'yaml', verify: true }
+  input: "Real: src/app.ts. Fake: src/fake.ts"
+  files:
+    'src/app.ts': 'export default {}'
+  expected: |
+    - {{CWD}}/src/app.ts
+
+- name: "Pipeline with different format (yaml) and no unique"
+  options: { format: 'yaml', unique: false, verify: false }
+  input: "path: a.txt, again: a.txt"
+  files: {}
+  expected: |
+    - a.txt
+    - a.txt
+
+- name: "Pipeline should produce empty output for no matches"
+  options: { format: 'json' }
+  input: "Just some regular text without any paths."
+  files: {}
+  expected: "[]"
+````
+
+## File: test/unit/core.test.ts
+````typescript
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import path from 'node:path';
+import { extractPaths, verifyPaths, type Options } from '../../src/core';
+import {
+  loadYamlFixture,
+  setupTestDirectory,
+  cleanupTestDirectory,
+} from '../test.utils';
+
+type ExtractPathsTestCase = {
+  name: string;
+  options: Options;
+  input: string;
+  expected: string[];
+};
+
+describe('core.ts', () => {
+  describe('extractPaths', async () => {
+    const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
+
+    for (const { name, options, input, expected } of fixtures) {
+      it(name, () => {
+        const result = extractPaths(input, options);
+        // Sort for stable comparison
+        expect(result.sort()).toEqual(expected.sort());
+      });
+    }
+  });
+
+  describe('verifyPaths', () => {
+    let tempDir: string;
+    const testFiles = {
+      'file1.txt': 'hello',
+      'dir/file2.js': 'content',
+      'dir/subdir/file3.json': '{}',
+    };
+
+    beforeEach(async () => {
+      tempDir = await setupTestDirectory(testFiles);
+    });
+
+    afterEach(async () => {
+      await cleanupTestDirectory(tempDir);
+    });
+
+    it('should return only paths that exist on disk', async () => {
+      const pathsToCheck = [
+        path.join(tempDir, 'file1.txt'), // exists
+        path.join(tempDir, 'dir/file2.js'), // exists
+        path.join(tempDir, 'non-existent.txt'), // does not exist
+        path.join(tempDir, 'dir/subdir/another.json'), // does not exist
+      ];
+
+      const expected = [
+        path.join(tempDir, 'file1.txt'),
+        path.join(tempDir, 'dir/file2.js'),
+      ];
+
+      const result = await verifyPaths(pathsToCheck, tempDir);
+      expect(result.sort()).toEqual(expected.sort());
+    });
+
+    it('should return an empty array if no paths exist', async () => {
+      const pathsToCheck = [
+        path.join(tempDir, 'foo.txt'),
+        path.join(tempDir, 'bar.js'),
+      ];
+      const result = await verifyPaths(pathsToCheck, tempDir);
+      expect(result).toEqual([]);
+    });
+
+    it('should return an empty array for empty input', async () => {
+      const result = await verifyPaths([], tempDir);
+      expect(result).toEqual([]);
+    });
+  });
+});
+````
+
+## File: test/test.utils.ts
+````typescript
+import { file } from 'bun';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import yaml from 'js-yaml';
+
+/**
+ * Loads and parses a YAML fixture file.
+ * @param filePath The path to the YAML file, relative to the `test` directory.
+ * @returns The parsed data from the YAML file.
+ */
+export async function loadYamlFixture<T = unknown>(
+  filePath: string,
+): Promise<T> {
+  const absolutePath = path.resolve(process.cwd(), 'test', filePath);
+  const fileContent = await file(absolutePath).text();
+  return yaml.load(fileContent) as T;
+}
+
+/**
+ * Creates a temporary directory and populates it with the specified files.
+ * @param files A map where keys are relative file paths and values are their content.
+ * @returns The absolute path to the created temporary directory.
+ */
+export async function setupTestDirectory(files: {
+  [path: string]: string;
+}): Promise<string> {
+  const tempDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'pathfish-test-'),
+  );
+  for (const [filePath, content] of Object.entries(files)) {
+    const absolutePath = path.join(tempDir, filePath);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, content);
+  }
+  return tempDir;
+}
+
+/**
+ * Recursively removes a directory.
+ * @param dirPath The absolute path to the directory to remove.
+ */
+export async function cleanupTestDirectory(dirPath: string): Promise<void> {
+  await fs.rm(dirPath, { recursive: true, force: true });
+}
+
+/**
+ * Executes the CLI in a separate process.
+ * @param args An array of command-line arguments.
+ * @param stdinInput An optional string to pipe to the process's stdin.
+ * @param cwd The working directory for the spawned process.
+ * @returns A promise that resolves with the process's stdout, stderr, and exit code.
+ */
+export async function runCli(
+  args: string[],
+  stdinInput?: string,
+  cwd?: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
+  const proc = Bun.spawn(['bun', 'run', cliPath, ...args], {
+    stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
+    cwd,
+  });
+
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  return { stdout, stderr, exitCode };
+}
 ````
 
 ## File: README.md
@@ -716,14 +871,52 @@ bun run build
 MIT
 ````
 
+## File: tsconfig.json
+````json
+{
+  "compilerOptions": {
+    // Environment setup & latest features
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "allowJs": true,
+
+    // Bundler mode
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true,
+    "noEmit": false,
+    "outDir": "dist",
+
+    // Best practices
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+
+    // Some stricter flags (disabled by default)
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noPropertyAccessFromIndexSignature": false
+  },
+  "include": ["src", "test"]
+}
+````
+
 ## File: src/cli.ts
 ````typescript
 #!/usr/bin/env bun
 
 import mri from 'mri';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runPipeline, type PipelineOptions } from './engine';
 import { copyToClipboard, type Format } from './utils';
-import { version } from '../package.json' with { type: 'json' };
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const { version } = await Bun.file(path.join(__dirname, '../package.json')).json();
 
 const HELP_TEXT = `
 pathfish v${version}
@@ -849,9 +1042,9 @@ const PATH_REGEX = new RegExp(
   [
     // Part 1: Paths with directory separators. Two main cases:
     // 1a: Absolute paths (e.g., /foo/bar, C:\foo\bar)
-    /(?:[a-zA-Z]:)?(?:[\\/][\w.-]+)+/.source,
+    /(?:[a-zA-Z]:)?(?:[\\\/][\w.-]+)+/.source,
     // 1b: Relative paths with separators (e.g., src/foo, ./foo, ../foo)
-    /[\w.-]+(?:[\\/][\w.-]+)+/.source,
+    /[\w.-]+(?:[\\\/][\w.-]+)+/.source,
     // Part 2: Standalone filenames with extensions (e.g., README.md)
     /\b[\w.-]+\.\w+\b/.source,
   ].join('|'),
@@ -1017,195 +1210,6 @@ describe('cli.ts (E2E)', async () => {
     }
   });
 });
-````
-
-## File: test/unit/core.test.ts
-````typescript
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import path from 'node:path';
-import { extractPaths, verifyPaths, type Options } from '../../src/core';
-import {
-  loadYamlFixture,
-  setupTestDirectory,
-  cleanupTestDirectory,
-} from '../test.utils';
-
-type ExtractPathsTestCase = {
-  name: string;
-  options: Options;
-  input: string;
-  expected: string[];
-};
-
-describe('core.ts', () => {
-  describe('extractPaths', async () => {
-    const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
-
-    for (const { name, options, input, expected } of fixtures) {
-      it(name, () => {
-        const result = extractPaths(input, options);
-        // Sort for stable comparison
-        expect(result.sort()).toEqual(expected.sort());
-      });
-    }
-  });
-
-  describe('verifyPaths', () => {
-    let tempDir: string;
-    const testFiles = {
-      'file1.txt': 'hello',
-      'dir/file2.js': 'content',
-      'dir/subdir/file3.json': '{}',
-    };
-
-    beforeEach(async () => {
-      tempDir = await setupTestDirectory(testFiles);
-    });
-
-    afterEach(async () => {
-      await cleanupTestDirectory(tempDir);
-    });
-
-    it('should return only paths that exist on disk', async () => {
-      const pathsToCheck = [
-        path.join(tempDir, 'file1.txt'), // exists
-        path.join(tempDir, 'dir/file2.js'), // exists
-        path.join(tempDir, 'non-existent.txt'), // does not exist
-        path.join(tempDir, 'dir/subdir/another.json'), // does not exist
-      ];
-
-      const expected = [
-        path.join(tempDir, 'file1.txt'),
-        path.join(tempDir, 'dir/file2.js'),
-      ];
-
-      const result = await verifyPaths(pathsToCheck, tempDir);
-      expect(result.sort()).toEqual(expected.sort());
-    });
-
-    it('should return an empty array if no paths exist', async () => {
-      const pathsToCheck = [
-        path.join(tempDir, 'foo.txt'),
-        path.join(tempDir, 'bar.js'),
-      ];
-      const result = await verifyPaths(pathsToCheck, tempDir);
-      expect(result).toEqual([]);
-    });
-
-    it('should return an empty array for empty input', async () => {
-      const result = await verifyPaths([], tempDir);
-      expect(result).toEqual([]);
-    });
-  });
-});
-````
-
-## File: test/test.utils.ts
-````typescript
-import { file } from 'bun';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import os from 'node:os';
-import yaml from 'js-yaml';
-
-/**
- * Loads and parses a YAML fixture file.
- * @param filePath The path to the YAML file, relative to the `test` directory.
- * @returns The parsed data from the YAML file.
- */
-export async function loadYamlFixture<T = unknown>(
-  filePath: string,
-): Promise<T> {
-  const absolutePath = path.resolve(process.cwd(), 'test', filePath);
-  const fileContent = await file(absolutePath).text();
-  return yaml.load(fileContent) as T;
-}
-
-/**
- * Creates a temporary directory and populates it with the specified files.
- * @param files A map where keys are relative file paths and values are their content.
- * @returns The absolute path to the created temporary directory.
- */
-export async function setupTestDirectory(files: {
-  [path: string]: string;
-}): Promise<string> {
-  const tempDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), 'pathfish-test-'),
-  );
-  for (const [filePath, content] of Object.entries(files)) {
-    const absolutePath = path.join(tempDir, filePath);
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, content);
-  }
-  return tempDir;
-}
-
-/**
- * Recursively removes a directory.
- * @param dirPath The absolute path to the directory to remove.
- */
-export async function cleanupTestDirectory(dirPath: string): Promise<void> {
-  await fs.rm(dirPath, { recursive: true, force: true });
-}
-
-/**
- * Executes the CLI in a separate process.
- * @param args An array of command-line arguments.
- * @param stdinInput An optional string to pipe to the process's stdin.
- * @param cwd The working directory for the spawned process.
- * @returns A promise that resolves with the process's stdout, stderr, and exit code.
- */
-export async function runCli(
-  args: string[],
-  stdinInput?: string,
-  cwd?: string,
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
-  const proc = Bun.spawn(['bun', 'run', cliPath, ...args], {
-    stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
-    cwd,
-  });
-
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
-  const exitCode = await proc.exited;
-
-  return { stdout, stderr, exitCode };
-}
-````
-
-## File: tsconfig.json
-````json
-{
-  "compilerOptions": {
-    // Environment setup & latest features
-    "lib": ["ESNext"],
-    "target": "ESNext",
-    "module": "Preserve",
-    "moduleDetection": "force",
-    "jsx": "react-jsx",
-    "allowJs": true,
-
-    // Bundler mode
-    "moduleResolution": "bundler",
-    "verbatimModuleSyntax": true,
-    "noEmit": false,
-    "outDir": "dist",
-
-    // Best practices
-    "strict": true,
-    "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-
-    // Some stricter flags (disabled by default)
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
-  },
-  "include": ["src", "test"]
-}
 ````
 
 ## File: package.json
