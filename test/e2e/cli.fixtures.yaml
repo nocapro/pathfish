@@ -107,3 +107,18 @@
   args: ["--format", "list"]
   stdin: "no paths here"
   expected_stdout: ""
+
+- name: "should handle complex paths from stdin"
+  args: ["--no-verify", "--format", "list"]
+  stdin: "url.com/path/to/file.js?v=42 and a/b/c.py#L10"
+  files: {}
+  expected_stdout: |
+    /path/to/file.js
+    a/b/c.py
+
+- name: "should handle quoted paths with spaces from stdin"
+  args: ["--no-verify", "--format", "list"]
+  stdin: 'Found file in "path with spaces/file.txt"'
+  files: {}
+  expected_stdout: |
+    path with spaces/file.txt

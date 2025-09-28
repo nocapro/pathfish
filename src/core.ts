@@ -52,6 +52,12 @@ const isIgnored = (p: string): boolean => {
 // 4. Standalone filenames with extensions (README.md, package.json)
 const PATH_REGEX = new RegExp(
   [
+    // Quoted paths with spaces (must come first to allow spaces)
+    /(?:"[^"]*[\\\/][^"]*"|'[^']*[\\\/][^']*')/.source,
+
+    // Windows UNC paths: \\server\share\file (must come before absolute)
+    /[\\\/]{2}[^\s\n]+[\\\/][^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+
     // Windows absolute paths: C:\path\to\file (must come first to avoid partial matches)
     /[a-zA-Z]:[\\\/][^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
 
@@ -61,8 +67,14 @@ const PATH_REGEX = new RegExp(
     // Relative paths with separators: ./file, ../file, src/file
     /(?:\.[\\/]|[^\s\n]+[\\/])[^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
 
-    // Standalone filenames with extensions: file.txt, README.md
-    /\b[^\s\n]+\.[a-zA-Z]+\b/.source,
+    // Standalone filenames with extensions: file.txt, README.md.
+    // It avoids matching email domains and parts of URLs by using a negative
+    // lookbehind for '@' and '//'. It also prevents slashes in the filename
+    // part to avoid overlapping with the relative path regex.
+    /(?<!@|\/\/)\b[^\s\n\\/]+\.[a-zA-Z0-9]+\b/.source,
+
+    // Common filenames without extensions
+    /\b(?:Dockerfile|Makefile|Jenkinsfile|Vagrantfile)\b/.source,
   ].join('|'),
   'g',
 );
@@ -83,8 +95,9 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
     // 2. Clean up matches: remove trailing line/col numbers and common punctuation.
     const cleanedPaths = matches.map(p =>
       p.replace(/(?::\d+)+$/, '') // a/b/c:10:5 -> a/b/c
-       .replace(/[.,;]$/, '')     // a/b/c, -> a/b/c
-       .replace(/\\\\/g, '\\')    // Normalize double backslashes to single
+       .replace(/[?#].*$/, '') // remove query strings and fragments
+       .replace(/^[ "'(<]+|[ .,;"')>]+$/g, '') // strip surrounding punctuation
+       .replace(/\\\\/g, '\\'), // Normalize double backslashes to single
     );
 
     // 3. Filter out commonly ignored paths (e.g., node_modules).

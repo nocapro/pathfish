@@ -79,3 +79,130 @@
     But this is fine: my-package.json
   expected:
     - "my-package.json"
+
+- name: "Paths with special characters and surrounding punctuation"
+  options: {}
+  input: |
+    Paths can be tricky: (src/components/Button (new).tsx),
+    <[dist/app-v2.js]>, or even "quoted/path.css".
+    A path with a number in extension: file.v2.js
+  expected:
+    - "src/components/Button (new).tsx"
+    - "dist/app-v2.js"
+    - "quoted/path.css"
+    - "file.v2.js"
+
+- name: "Should extract common files without extensions"
+  options: {}
+  input: "Check the Dockerfile and also the Makefile for build instructions."
+  expected:
+    - "Dockerfile"
+    - "Makefile"
+
+- name: "Should avoid matching domains from emails and URLs"
+  options: {}
+  input: |
+    Contact me at user@domain.com.
+    Check the website http://example.org/index.html and also https://another.com.
+    A file share: //server/file.txt
+    But this should be found: a/b/c.com
+  expected:
+    - "/index.html"
+    - "a/b/c.com"
+    - "/server/file.txt"
+
+- name: "Advanced path extraction with complex cases"
+  options: {}
+  input: |
+    Quoted path: "src/app/main.css"
+    Path with query string: /assets/style.css?v=1.2
+    Path with fragment: /images/pic.jpg#fragment
+    Path in URL: https://example.com/some/path/to/resource.json
+    File with multiple dots: my.component.test.js and another.is.here.md
+    Path with unicode: src/för/måin.ts
+    Path next to text: file.txt,but notthispart.
+    Not a file: user@domain.com, nothing to see.
+    But this is a file: a/b/c.io
+  expected:
+    - "src/app/main.css"
+    - "/assets/style.css"
+    - "/images/pic.jpg"
+    - "/some/path/to/resource.json"
+    - "my.component.test.js"
+    - "another.is.here.md"
+    - "src/för/måin.ts"
+    - "file.txt"
+    - "a/b/c.io"
+
+- name: "Quoted paths with spaces"
+  options: {}
+  input: |
+    Error in "/path with spaces/file.js" and also in 'another path/with spaces.ts'.
+  expected:
+    - "/path with spaces/file.js"
+    - "another path/with spaces.ts"
+
+- name: "Paths with scoped npm packages"
+  options: {}
+  input: "Requires \"@scoped/package/index.js\" and also regular 'package/main.js'"
+  expected:
+    - "@scoped/package/index.js"
+    - "package/main.js"
+
+- name: "Paths with tilde"
+  options: {}
+  input: "Check ~/documents/report.docx."
+  expected:
+    - "~/documents/report.docx"
+
+- name: "Complex relative paths with parent selectors"
+  options: {}
+  input: "Path is ../../src/app/../core/utils.ts"
+  expected:
+    - "../../src/app/../core/utils.ts"
+
+- name: "Windows UNC paths"
+  options: {}
+  input: "Data at \\\\network-share\\folder\\data.csv and //another/share"
+  expected:
+    - "\\\\network-share\\folder\\data.csv"
+    - "//another/share"
+
+- name: "Should avoid matching version numbers"
+  options: {}
+  input: "Release v3.4.5 is out. See also file-1.2.3.log"
+  expected:
+    - "file-1.2.3.log"
+
+- name: "Should avoid matching UUIDs and commit hashes"
+  options: {}
+  input: "Error ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890, commit: f0e9d8c7. see file.log"
+  expected:
+    - "file.log"
+
+- name: "Paths inside URLs with ports"
+  options: {}
+  input: "Asset is at http://localhost:8080/assets/img/logo.png. And another at just /path/to/file.js"
+  expected:
+    - "/assets/img/logo.png"
+    - "/path/to/file.js"
+
+- name: "Paths with mixed slashes"
+  options: {}
+  input: "A strange path: src/mix\\slash/component.tsx"
+  expected:
+    - "src/mix\\slash/component.tsx"
+
+- name: "Paths with multiple parent selectors"
+  options: {}
+  input: "Go way up with ../../../../../etc/passwd"
+  expected:
+    - "../../../../../etc/passwd"
+
+- name: "Paths adjacent to brackets and commas"
+  options: {}
+  input: "Files are [file1.txt], (file2.log), and {path/to/file3.json}."
+  expected:
+    - "file1.txt"
+    - "file2.log"
+    - "path/to/file3.json"

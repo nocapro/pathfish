@@ -47,3 +47,19 @@
   input: "Just some regular text without any paths."
   files: {}
   expected: "[]"
+
+- name: "Pipeline with complex paths and query strings"
+  options: { format: 'list', verify: false }
+  input: "Path1: /a/b.css?v=1 Path2: src/d.ts#foo Path3: user@domain.com"
+  files: {}
+  expected: |
+    /a/b.css
+    src/d.ts
+
+- name: "Pipeline with quoted path with spaces and verification"
+  options: { format: 'list', verify: true }
+  input: 'Log: "real dir/real file.txt" and "fake dir/fake file.txt"'
+  files:
+    'real dir/real file.txt': 'content'
+  expected: |
+    real dir/real file.txt
