@@ -6,7 +6,7 @@
 
 Drop in compiler logs, linter output, stack traces, Git diffs, chat logs, etc.
 `pathfish` finds every **relative** or **absolute** file path that appears in the text and returns them in the format you want (JSON, YAML, plain list).
-Optionally **verify** that each file really exists, **copy** the list to your clipboard, or **chain** several commands together.
+It finds paths with or without file extensions, and can optionally **verify** that each file really exists, **copy** the list to your clipboard, or **chain** several commands together.
 
 ## Install
 
@@ -121,6 +121,19 @@ Output (`--format json --verify`)
 [
   "/home/you/project/src/components/SettingsScreen.tsx"
 ]
+```
+
+### Dockerfile commands
+
+Input
+```
+COPY --from=builder /app/dist/server /usr/local/bin/server
+```
+
+Output (`--format list`)
+```
+/app/dist/server
+/usr/local/bin/server
 ```
 
 ### ESLint stylish output

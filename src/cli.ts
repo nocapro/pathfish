@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 
 import mri from 'mri';
-import { extractPaths, verifyPaths, type Options } from './core';
-import { createFormatter, copyToClipboard, type Format } from './utils';
+import { runPipeline, type PipelineOptions } from './engine';
+import { copyToClipboard, type Format } from './utils';
 import { version } from '../package.json' with { type: 'json' };
 
 const HELP_TEXT = `
@@ -36,45 +36,6 @@ type CliArgs = {
   cwd?: string;
 };
 
-/**
- * Creates a pipeline of operations to be performed on the input text.
- * This functional approach makes the process clear and configurable.
- * @param args Parsed CLI arguments.
- * @returns An async function that executes the full path extraction and formatting pipeline.
- */
-const createCliPipeline = (args: CliArgs) => async (inputText: string) => {
-  const options: Options = {
-    absolute: args.absolute,
-    cwd: args.cwd || process.cwd(),
-    unique: true, // Unique is always true for CLI
-  };
-
-  // 1. A function to extract paths from text using the specified options.
-  const extract = (text: string) => extractPaths(text, options);
-
-  // 2. An async function to optionally verify the extracted paths.
-  const verify = async (paths: string[]) =>
-    args.verify ? verifyPaths(paths) : paths;
-
-  // 3. A function to format the paths into the desired output string.
-  const format = createFormatter(args.format as Format, args.pretty ?? true);
-
-  // 4. An async function to optionally copy the formatted string to the clipboard.
-  const copy = async (formattedText: string) => {
-    if (args.copy) {
-      await copyToClipboard(formattedText);
-    }
-    return formattedText;
-  };
-
-  // Execute the pipeline by composing the functions.
-  const initialPaths = extract(inputText);
-  const verifiedPaths = await verify(initialPaths);
-  const formattedOutput = format(verifiedPaths);
-  const finalOutput = await copy(formattedOutput);
-
-  return finalOutput;
-};
 
 /**
  * Main CLI entry point.
@@ -106,10 +67,20 @@ async function run() {
     ? await Bun.file(inputFile).text()
     : await Bun.stdin.text();
 
-  const pipeline = createCliPipeline(args);
-  const result = await pipeline(inputText);
+  // Map CLI arguments to engine pipeline options.
+  const options: PipelineOptions = {
+    absolute: args.absolute,
+    cwd: args.cwd,
+    verify: args.verify,
+    format: args.format as Format,
+    pretty: args.pretty,
+  };
 
+  const result = await runPipeline(inputText, options);
   console.log(result);
+
+  // Copying is a side effect that happens after the result is ready.
+  if (args.copy) await copyToClipboard(result);
 }
 
 run().catch(err => {

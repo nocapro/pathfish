@@ -290,36 +290,6 @@ export async function copyToClipboard(text: string): Promise<void> {
 }
 ````
 
-## File: package.json
-````json
-{
-  "name": "pathfish",
-  "version": "0.1.0",
-  "module": "src/index.ts",
-  "type": "module",
-  "private": true,
-  "bin": {
-    "pathfish": "src/cli.ts"
-  },
-  "files": [
-    "src"
-  ],
-  "dependencies": {
-    "clipboardy": "^4.0.0",
-    "js-yaml": "^4.1.0",
-    "mri": "^1.2.0"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "@types/js-yaml": "^4.0.9",
-    "@types/mri": "^1.1.5"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
-}
-````
-
 ## File: README.md
 ````markdown
 # pathfish
@@ -483,6 +453,36 @@ bun run build
 MIT
 ````
 
+## File: package.json
+````json
+{
+  "name": "pathfish",
+  "version": "0.1.0",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "pathfish": "src/cli.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "clipboardy": "^4.0.0",
+    "js-yaml": "^4.1.0",
+    "mri": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/js-yaml": "^4.0.9",
+    "@types/mri": "^1.1.5"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
+````
+
 ## File: tsconfig.json
 ````json
 {
@@ -497,7 +497,6 @@ MIT
 
     // Bundler mode
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": false,
     "outDir": "dist",

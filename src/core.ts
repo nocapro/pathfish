@@ -21,10 +21,16 @@ export type Options = {
   unique?: boolean;
 };
 
-// This regex finds file paths, including optional line/column numbers.
-// It supports Windows, Unix, absolute, and relative paths.
-// It's designed to find paths with extensions in a larger body of text.
-const PATH_REGEX = /(?:(?:[a-zA-Z]:[\\\/]|\.{1,2}[\\\/]|\/))?(?:[\w.-]+[\\\/])*(?:[\w.-]+\.\w+)(?::\d+)?(?::\d+)?/g;
+// This regex finds file paths, including optional line/column numbers. It's
+// designed to be comprehensive, supporting Windows, Unix, absolute, and
+// relative paths. It's composed of two main parts:
+// 1. The first part finds paths that contain at least one directory separator
+//    (e.g., `src/core.ts`, `./dist`, `/var/log/syslog`). This allows it to
+//    find paths that don't have a file extension.
+// 2. The second part finds standalone filenames that *do* have a file extension
+//    (e.g., `README.md`, `bun.lockb`), using word boundaries to avoid matching
+//    parts of other strings.
+const PATH_REGEX = /(?:(?:[a-zA-Z]:[\\\/]|\.{1,2}[\\\/]|\/))?(?:[\w.-]+[\\\/])+[\w.-]+(?::\d+)?(?::\d+)?|(?:\b[\w.-]+\.\w+\b)(?::\d+)?(?::\d+)?/g;
 
 /**
  * A higher-order function that creates a path extraction pipeline.
