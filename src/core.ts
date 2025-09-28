@@ -65,15 +65,15 @@ const PATH_REGEX = new RegExp(
     /[a-zA-Z]:[\\\/][^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
 
     // Unix absolute paths: /path/to/file
-    /\/[^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+    /\/[^\s\n"']+(?:[\\\/][^\s\n"']+)*/.source,
 
     // Relative paths with separators: ./file, ../file, src/file
-    /(?:\.[\\/]|[^\s\n]+[\\/])[^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+    /(?:\.[\\/]|[^\s\n"']+[\\/])[^\s\n"']+(?:[\\\/][^\s\n"']+)*/.source,
 
     // Standalone filenames with extensions: file.txt, README.md, my.component.test.js.
     // Use negative lookbehind to avoid email domains and URL contexts
     // Supports multi-dot filenames like my.component.test.js
-    /(?<!@|https?:\/\/[^\s]*)\b[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,}\b(?!\s*@)/.source,
+    /(?<!@|https?:\/\/[^\s]*)\b[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,}\b(?!\s*@)(?![^"]*")/.source,
 
     // Common filenames without extensions
     /\b(?:Dockerfile|Makefile|Jenkinsfile|Vagrantfile)\b/.source,
@@ -94,8 +94,24 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
     // 1. Find all potential paths using the regex.
     const matches = Array.from(text.matchAll(PATH_REGEX), m => m[0]);
 
-    // 2. Clean up matches: remove trailing line/col numbers and common punctuation.
-    const cleanedPaths = matches.map(p => {
+    // 2. Extract valid paths from potentially malformed matches
+    const extractedPaths: string[] = [];
+    for (const match of matches) {
+      // If the match contains line breaks, it might contain multiple paths
+      if (match.includes('\n')) {
+        // Extract individual file paths from multiline strings
+        const pathPattern = /[a-zA-Z0-9_./\\-]+(?:\/[a-zA-Z0-9_.-]+)*\.[a-zA-Z0-9]{1,5}(?::\d+(?::\d+)?)?/gm;
+        const pathMatches = match.match(pathPattern);
+        if (pathMatches) {
+          extractedPaths.push(...pathMatches.map(p => p.trim()));
+        }
+      } else {
+        extractedPaths.push(match);
+      }
+    }
+
+    // 3. Clean up matches: remove trailing line/col numbers and common punctuation.
+    const cleanedPaths = extractedPaths.map(p => {
       let path = p;
 
       // Remove line/column numbers
@@ -147,10 +163,10 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
       return path;
     });
 
-    // 3. Filter out commonly ignored paths (e.g., node_modules).
+    // 4. Filter out commonly ignored paths (e.g., node_modules).
     const filteredPaths = cleanedPaths.filter(p => !isIgnored(p));
 
-    // 4. Filter out version numbers and other non-path patterns
+    // 5. Filter out version numbers and other non-path patterns
     const versionPattern = /^[a-zA-Z]?v?\d+(?:\.\d+)*$/;
     const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
     const hashPattern = /^[a-f0-9]{7,40}$/i;
@@ -178,21 +194,16 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
         }
       }
       
-      // Filter out strings that are clearly import/require statements or quoted non-paths
+      // Filter out import statements and module references that appear in TypeScript errors
       if (p.startsWith('"') && p.endsWith('"')) {
-        const content = p.slice(1, -1);
-        // Keep paths with slashes, filter out module names
-        if (!content.includes('/') && !content.includes('\\')) {
-          return false;
-        }
+        // Always filter quoted strings - they're usually import paths in error messages
+        return false;
       }
       
-      // Filter out relative import paths that don't end with file extensions
-      // But only if they're simple module imports (not deep paths)
+      // Filter out relative import module references without file extensions
       if ((p.startsWith('./') || p.startsWith('../')) && !p.includes(' ')) {
-        const segments = p.split('/').filter(s => s.length > 0);
-        // Only filter simple relative imports like '../constants', not deep paths like '../../../../../etc/passwd'
-        if (segments.length <= 2 && !/\.[a-zA-Z0-9]{1,5}$/.test(p)) {
+        // If it doesn't have a file extension and is short, it's likely a module import
+        if (!/\.[a-zA-Z0-9]{1,5}$/.test(p) && p.split('/').length <= 3) {
           return false;
         }
       }
@@ -204,13 +215,13 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
              p.trim() !== '';
     });
 
-    // 5. Fix split paths that contain parentheses
+    // 6. Fix split paths that contain parentheses
     const fixedPaths = fixSplitPaths(validPaths);
 
-    // 6. (Optional) Filter for unique paths.
+    // 7. (Optional) Filter for unique paths.
     const uniquePaths = unique ? Array.from(new Set(fixedPaths)) : fixedPaths;
 
-    // 7. (Optional) Resolve paths to be absolute.
+    // 8. (Optional) Resolve paths to be absolute.
     const resolvedPaths = absolute
       ? uniquePaths.map(p => path.resolve(cwd, p))
       : uniquePaths;
