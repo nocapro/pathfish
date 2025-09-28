@@ -204,54 +204,6 @@ export async function copyToClipboard(text: string): Promise<void> {
 }
 ````
 
-## File: test/integration/engine.test.ts
-````typescript
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { runPipeline, type PipelineOptions } from '../../src/engine';
-import {
-  loadYamlFixture,
-  setupTestDirectory,
-  cleanupTestDirectory,
-} from '../test.utils';
-
-type EngineTestCase = {
-  name: string;
-  options: PipelineOptions;
-  input: string;
-  files: { [path: string]: string };
-  expected: string;
-};
-
-describe('engine.ts (Integration)', async () => {
-  const fixtures = await loadYamlFixture<EngineTestCase[]>('integration/engine.fixtures.yaml');
-
-  describe('runPipeline', () => {
-    let tempDir: string;
-
-    for (const { name, options, input, files, expected } of fixtures) {
-      // Each test case gets its own directory setup
-      beforeEach(async () => {
-        tempDir = await setupTestDirectory(files);
-      });
-
-      afterEach(async () => {
-        await cleanupTestDirectory(tempDir);
-      });
-
-      it(name, async () => {
-        // Use the temp directory as the CWD for the pipeline
-        const result = await runPipeline(input, { ...options, cwd: tempDir });
-
-        // Replace placeholder in expected output with the actual temp dir path
-        const expectedWithCwd = expected.replaceAll('{{CWD}}', tempDir).trim();
-
-        expect(result.trim()).toEqual(expectedWithCwd);
-      });
-    }
-  });
-});
-````
-
 ## File: test/unit/core.fixtures.yaml
 ````yaml
 - name: "Basic path extraction"
@@ -290,7 +242,6 @@ describe('engine.ts (Integration)', async () => {
     The project uses bun.lockb and has a README.md.
     But this is: package.json
   expected:
-    - "bun.lockb"
     - "README.md"
     - "package.json"
 
@@ -319,6 +270,25 @@ describe('engine.ts (Integration)', async () => {
   options: {}
   input: "No paths here."
   expected: []
+
+- name: "Should ignore common transient/generated directories"
+  options: {}
+  input: |
+    Path in node_modules/package/file.js
+    Path in .git/hooks/pre-commit
+    Path in dist/bundle.js
+    Path in project/build/output.css
+    A file called distribution/file.js should not be ignored.
+  expected:
+    - "distribution/file.js"
+
+- name: "Should ignore common lockfiles"
+  options: {}
+  input: |
+    This project uses bun.lockb and package-lock.json.
+    But this is fine: my-package.json
+  expected:
+    - "my-package.json"
 ````
 
 ## File: test/unit/utils.test.ts
@@ -540,6 +510,56 @@ describe('createFormatter', async () => {
   expected: "[]"
 ````
 
+## File: test/integration/engine.test.ts
+````typescript
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { runPipeline, type PipelineOptions } from '../../src/engine';
+import {
+  loadYamlFixture,
+  setupTestDirectory,
+  cleanupTestDirectory,
+} from '../test.utils';
+
+type EngineTestCase = {
+  name: string;
+  options: PipelineOptions;
+  input: string;
+  files: { [path: string]: string };
+  expected: string;
+};
+
+describe('engine.ts (Integration)', async () => {
+  const fixtures = await loadYamlFixture<EngineTestCase[]>('integration/engine.fixtures.yaml');
+
+  describe('runPipeline', () => {
+    // Use a separate describe block for each test case to avoid closure issues
+    fixtures.forEach(({ name, options, input, files, expected }) => {
+      describe(name, () => {
+        let tempDir: string;
+
+        beforeEach(async () => {
+          tempDir = await setupTestDirectory(files);
+        });
+
+        afterEach(async () => {
+          await cleanupTestDirectory(tempDir);
+        });
+
+        it('should execute correctly', async () => {
+          // Use the temp directory as the CWD for the pipeline
+          const result = await runPipeline(input, { ...options, cwd: tempDir });
+
+          // Replace placeholder in expected output with the actual temp dir path
+          const expectedWithCwd = expected.replaceAll('{{CWD}}', tempDir).trim();
+
+          expect(result.trim()).toEqual(expectedWithCwd);
+        });
+      });
+    });
+  });
+});
+````
+
 ## File: test/unit/core.test.ts
 ````typescript
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
@@ -619,80 +639,6 @@ describe('core.ts', () => {
     });
   });
 });
-````
-
-## File: test/test.utils.ts
-````typescript
-import { file } from 'bun';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import os from 'node:os';
-import yaml from 'js-yaml';
-
-/**
- * Loads and parses a YAML fixture file.
- * @param filePath The path to the YAML file, relative to the `test` directory.
- * @returns The parsed data from the YAML file.
- */
-export async function loadYamlFixture<T = unknown>(
-  filePath: string,
-): Promise<T> {
-  const absolutePath = path.resolve(process.cwd(), 'test', filePath);
-  const fileContent = await file(absolutePath).text();
-  return yaml.load(fileContent) as T;
-}
-
-/**
- * Creates a temporary directory and populates it with the specified files.
- * @param files A map where keys are relative file paths and values are their content.
- * @returns The absolute path to the created temporary directory.
- */
-export async function setupTestDirectory(files: {
-  [path: string]: string;
-}): Promise<string> {
-  const tempDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), 'pathfish-test-'),
-  );
-  for (const [filePath, content] of Object.entries(files)) {
-    const absolutePath = path.join(tempDir, filePath);
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, content);
-  }
-  return tempDir;
-}
-
-/**
- * Recursively removes a directory.
- * @param dirPath The absolute path to the directory to remove.
- */
-export async function cleanupTestDirectory(dirPath: string): Promise<void> {
-  await fs.rm(dirPath, { recursive: true, force: true });
-}
-
-/**
- * Executes the CLI in a separate process.
- * @param args An array of command-line arguments.
- * @param stdinInput An optional string to pipe to the process's stdin.
- * @param cwd The working directory for the spawned process.
- * @returns A promise that resolves with the process's stdout, stderr, and exit code.
- */
-export async function runCli(
-  args: string[],
-  stdinInput?: string,
-  cwd?: string,
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
-  const proc = Bun.spawn(['bun', 'run', cliPath, ...args], {
-    stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
-    cwd,
-  });
-
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
-  const exitCode = await proc.exited;
-
-  return { stdout, stderr, exitCode };
-}
 ````
 
 ## File: README.md
@@ -905,6 +851,117 @@ MIT
 }
 ````
 
+## File: test/test.utils.ts
+````typescript
+import { file } from 'bun';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import yaml from 'js-yaml';
+
+/**
+ * Loads and parses a YAML fixture file.
+ * @param filePath The path to the YAML file, relative to the `test` directory.
+ * @returns The parsed data from the YAML file.
+ */
+export async function loadYamlFixture<T = unknown>(
+  filePath: string,
+): Promise<T> {
+  const absolutePath = path.resolve(process.cwd(), 'test', filePath);
+  const fileContent = await file(absolutePath).text();
+  return yaml.load(fileContent) as T;
+}
+
+/**
+ * Creates a temporary directory and populates it with the specified files.
+ * @param files A map where keys are relative file paths and values are their content.
+ * @returns The absolute path to the created temporary directory.
+ */
+export async function setupTestDirectory(files: {
+  [path: string]: string;
+}): Promise<string> {
+  const tempDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'pathfish-test-'),
+  );
+
+  for (const [filePath, content] of Object.entries(files)) {
+    const absolutePath = path.join(tempDir, filePath);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, content);
+  }
+  return tempDir;
+}
+
+/**
+ * Recursively removes a directory.
+ * @param dirPath The absolute path to the directory to remove.
+ */
+export async function cleanupTestDirectory(dirPath: string): Promise<void> {
+  await fs.rm(dirPath, { recursive: true, force: true });
+}
+
+/**
+ * Executes the CLI in a separate process.
+ * @param args An array of command-line arguments.
+ * @param stdinInput An optional string to pipe to the process's stdin.
+ * @param cwd The working directory for the spawned process.
+ * @returns A promise that resolves with the process's stdout, stderr, and exit code.
+ */
+export async function runCli(
+  args: string[],
+  stdinInput?: string,
+  cwd?: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
+
+  const proc = Bun.spawn(['bun', 'run', cliPath, ...args], {
+    stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
+    cwd,
+    stderr: 'pipe',
+    stdout: 'pipe',
+  });
+
+  const exitCode = await proc.exited;
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+
+  return { stdout, stderr, exitCode };
+}
+````
+
+## File: package.json
+````json
+{
+  "name": "pathfish",
+  "version": "0.1.0",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "pathfish": "src/cli.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "clipboardy": "^4.0.0",
+    "js-yaml": "^4.1.0",
+    "mri": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/js-yaml": "^4.0.9",
+    "@types/mri": "^1.1.5"
+  },
+  "scripts": {
+    "test": "bun test test"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
+````
+
 ## File: src/cli.ts
 ````typescript
 #!/usr/bin/env bun
@@ -976,9 +1033,15 @@ async function run() {
   }
 
   const inputFile = args._[0];
-  const inputText = inputFile
-    ? await Bun.file(inputFile).text()
-    : await Bun.stdin.text();
+  let inputText: string;
+
+  try {
+    inputText = inputFile
+      ? await Bun.file(path.resolve(args.cwd || process.cwd(), inputFile)).text()
+      : await Bun.stdin.text();
+  } catch (err) {
+    throw err;
+  }
 
   // Map CLI arguments to engine pipeline options.
   const options: PipelineOptions = {
@@ -989,6 +1052,7 @@ async function run() {
     pretty: args.pretty,
   };
 
+  
   const result = await runPipeline(inputText, options);
   console.log(result);
 
@@ -998,8 +1062,7 @@ async function run() {
 
 run().catch(err => {
   const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-  // Use console.error to write to stderr
-  console.error(`\x1b[31mError: ${errorMessage}\x1b[0m`);
+  process.stderr.write(`Error: ${errorMessage}\n`);
   process.exit(1);
 });
 ````
@@ -1029,24 +1092,48 @@ export type Options = {
   unique?: boolean;
 };
 
+const DEFAULT_IGNORE_DIRS = ['node_modules', '.git', 'dist', 'build'];
+const DEFAULT_IGNORE_FILES = ['package-lock.json', 'bun.lockb'];
+
+/**
+ * Checks if a given path matches any of the default ignore patterns.
+ * @param p The path string to check.
+ * @returns True if the path should be ignored, false otherwise.
+ */
+const isIgnored = (p: string): boolean => {
+  // Check against ignored directory patterns. This is a simple check; we see if
+  // any path segment is an exact match for a directory we want to ignore.
+  // This avoids accidentally filtering 'distribution/file.js'.
+  const segments = p.split(/[\\\/]/);
+  if (segments.some(segment => DEFAULT_IGNORE_DIRS.includes(segment))) {
+    return true;
+  }
+
+  // Check against ignored file patterns by looking at the basename.
+  const basename = path.basename(p);
+  return DEFAULT_IGNORE_FILES.includes(basename);
+};
+
 // This regex finds file paths, including optional line/column numbers. It's
 // designed to be comprehensive, supporting Windows, Unix, absolute, and
-// relative paths. It's composed of two main parts:
-// 1. The first part finds paths that contain at least one directory separator
-//    (e.g., `src/core.ts`, `./dist`, `/var/log/syslog`). This allows it to
-//    find paths that don't have a file extension.
-// 2. The second part finds standalone filenames that *do* have a file extension
-//    (e.g., `README.md`, `bun.lockb`), using word boundaries.
-// This new regex improves Windows path handling and is structured for clarity.
+// relative paths. The regex is structured to match complete paths:
+// 1. Windows absolute paths (C:\path\to\file)
+// 2. Unix absolute paths (/path/to/file)
+// 3. Relative paths with separators (src/file.ts, ./dist, ../parent)
+// 4. Standalone filenames with extensions (README.md, package.json)
 const PATH_REGEX = new RegExp(
   [
-    // Part 1: Paths with directory separators. Two main cases:
-    // 1a: Absolute paths (e.g., /foo/bar, C:\foo\bar)
-    /(?:[a-zA-Z]:)?(?:[\\\/][\w.-]+)+/.source,
-    // 1b: Relative paths with separators (e.g., src/foo, ./foo, ../foo)
-    /[\w.-]+(?:[\\\/][\w.-]+)+/.source,
-    // Part 2: Standalone filenames with extensions (e.g., README.md)
-    /\b[\w.-]+\.\w+\b/.source,
+    // Windows absolute paths: C:\path\to\file (must come first to avoid partial matches)
+    /[a-zA-Z]:[\\\/][^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+
+    // Unix absolute paths: /path/to/file
+    /\/[^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+
+    // Relative paths with separators: ./file, ../file, src/file
+    /(?:\.[\\/]|[^\s\n]+[\\/])[^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+
+    // Standalone filenames with extensions: file.txt, README.md
+    /\b[^\s\n]+\.[a-zA-Z]+\b/.source,
   ].join('|'),
   'g',
 );
@@ -1067,13 +1154,17 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
     // 2. Clean up matches: remove trailing line/col numbers and common punctuation.
     const cleanedPaths = matches.map(p =>
       p.replace(/(?::\d+)+$/, '') // a/b/c:10:5 -> a/b/c
-       .replace(/[.,;]$/, ''),    // a/b/c, -> a/b/c
+       .replace(/[.,;]$/, '')     // a/b/c, -> a/b/c
+       .replace(/\\\\/g, '\\')    // Normalize double backslashes to single
     );
 
-    // 3. (Optional) Filter for unique paths.
-    const uniquePaths = unique ? Array.from(new Set(cleanedPaths)) : cleanedPaths;
+    // 3. Filter out commonly ignored paths (e.g., node_modules).
+    const filteredPaths = cleanedPaths.filter(p => !isIgnored(p));
 
-    // 4. (Optional) Resolve paths to be absolute.
+    // 4. (Optional) Filter for unique paths.
+    const uniquePaths = unique ? Array.from(new Set(filteredPaths)) : filteredPaths;
+
+    // 5. (Optional) Resolve paths to be absolute.
     const resolvedPaths = absolute
       ? uniquePaths.map(p => path.resolve(cwd, p))
       : uniquePaths;
@@ -1141,9 +1232,8 @@ describe('cli.ts (E2E)', async () => {
   const fixtures = await loadYamlFixture<CliTestCase[]>('e2e/cli.fixtures.yaml');
 
   describe('CLI execution', () => {
-    let tempDir: string;
-
-    for (const testCase of fixtures) {
+    // Use a separate describe block for each test case to avoid closure issues
+    fixtures.forEach((testCase) => {
       const {
         name,
         args,
@@ -1155,92 +1245,62 @@ describe('cli.ts (E2E)', async () => {
         exit_code = 0,
       } = testCase;
 
-      // Each test case gets its own directory setup
-      beforeEach(async () => {
-        tempDir = await setupTestDirectory(files);
-      });
+      describe(name, () => {
+        let tempDir: string;
 
-      afterEach(async () => {
-        await cleanupTestDirectory(tempDir);
-      });
-
-      it(name, async () => {
-        const fileArgNames = Object.keys(files);
-
-        // Resolve file paths and placeholders in args
-        const processedArgs = args.map(arg => {
-          // If the arg is a file created for the test, use its relative path.
-          // The CLI process runs inside tempDir, so relative paths work correctly.
-          if (fileArgNames.includes(arg)) {
-            return arg;
-          }
-          // For other args (like --cwd), replace the placeholder.
-          return arg.replaceAll('{{CWD}}', tempDir);
+        beforeEach(async () => {
+          tempDir = await setupTestDirectory(files);
         });
 
-        const { stdout, stderr, exitCode } = await runCli(
-          processedArgs,
-          stdin,
-          tempDir, // Run the CLI process inside the temp directory
-        );
+        afterEach(async () => {
+          await cleanupTestDirectory(tempDir);
+        });
 
-        // Assert exit code
-        expect(exitCode).toBe(exit_code);
+        it('should execute correctly', async () => {
+          const fileArgNames = Object.keys(files);
 
-        // Assert stdout
-        if (expected_stdout !== undefined) {
-          const processed_expected_stdout = expected_stdout
-            .replaceAll('{{CWD}}', tempDir)
-            .trim();
-          expect(stdout.trim()).toEqual(processed_expected_stdout);
-        }
-        if (expected_stdout_contains !== undefined) {
-          const expected_text =
-            expected_stdout_contains === 'v'
-              ? `v${version}`
-              : expected_stdout_contains;
-          expect(stdout).toContain(expected_text);
-        }
+          // Resolve file paths and placeholders in args
+          const processedArgs = args.map(arg => {
+            // If the arg is a file created for the test, use its relative path.
+            // The CLI process runs inside tempDir, so relative paths work correctly.
+            if (fileArgNames.includes(arg)) {
+              return arg;
+            }
+            // For other args (like --cwd), replace the placeholder.
+            return arg.replaceAll('{{CWD}}', tempDir);
+          });
 
-        // Assert stderr
-        if (expected_stderr_contains !== undefined) {
-          expect(stderr).toContain(expected_stderr_contains);
-        }
+          const { stdout, stderr, exitCode } = await runCli(
+            processedArgs,
+            stdin,
+            tempDir, // Run the CLI process inside the temp directory
+          );
+
+          // Assert exit code
+          expect(exitCode).toBe(exit_code);
+
+          // Assert stdout
+          if (expected_stdout !== undefined) {
+            const processed_expected_stdout = expected_stdout
+              .replaceAll('{{CWD}}', tempDir)
+              .trim();
+            expect(stdout.trim()).toEqual(processed_expected_stdout);
+          }
+          if (expected_stdout_contains !== undefined) {
+            const expected_text =
+              expected_stdout_contains === 'v'
+                ? `v${version}`
+                : expected_stdout_contains;
+            expect(stdout).toContain(expected_text);
+          }
+
+          // Assert stderr
+          if (expected_stderr_contains !== undefined) {
+            expect(stderr).toContain(expected_stderr_contains);
+          }
+        });
       });
-    }
+    });
   });
 });
-````
-
-## File: package.json
-````json
-{
-  "name": "pathfish",
-  "version": "0.1.0",
-  "module": "src/index.ts",
-  "type": "module",
-  "private": true,
-  "bin": {
-    "pathfish": "src/cli.ts"
-  },
-  "files": [
-    "src"
-  ],
-  "dependencies": {
-    "clipboardy": "^4.0.0",
-    "js-yaml": "^4.1.0",
-    "mri": "^1.2.0"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "@types/js-yaml": "^4.0.9",
-    "@types/mri": "^1.1.5"
-  },
-  "scripts": {
-    "test": "bun test test"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
-}
 ````

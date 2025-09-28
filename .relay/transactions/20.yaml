@@ -1,0 +1,377 @@
+uuid: 4429f635-f9be-4835-ad69-b507ed69cd18
+projectId: pathfish
+createdAt: '2025-09-28T14:08:19.178Z'
+gitCommitMsg: >-
+  feat(core): auto-ignore common transient paths
+
+  Introduces default ignore patterns to filter out common unwanted paths during
+  extraction. This improves the signal-to-noise ratio of the output by default.
+
+  The following patterns are now ignored: - Directories: `node_modules`, `.git`,
+  `dist`, `build` - Files: `package-lock.json`, `bun.lockb`
+
+  This behavior is now the default and is not currently configurable via a CLI
+  flag. Unit tests have been added to verify the filtering logic.
+promptSummary: >-
+  Implement auto-ignoring of common files and directories like `node_modules`,
+  `dist`, and `bun.lockb`.
+reasoning:
+  - >-
+    This is a great feature request. Automatically filtering out noisy,
+    irrelevant paths from common locations like `node_modules` or build output
+    directories will make `pathfish` much more useful out of the box.
+  - 'Here''s my plan to implement this:'
+  - >-
+    1.  **Modify Core Logic**: I'll update `src/core.ts` to introduce a default
+    ignore list for common directories (`node_modules`, `.git`, `dist`, `build`)
+    and files (`package-lock.json`, `bun.lockb`). This filtering will be
+    integrated directly into the path extraction pipeline.
+  - >-
+    2.  **Update Unit Tests**: I will add new test cases to
+    `test/unit/core.fixtures.yaml` to verify that paths matching the ignore list
+    are correctly filtered out.
+  - >-
+    3.  **Adjust Existing Test**: I noticed an existing test case expects
+    `bun.lockb` in its output. I'll update this test to reflect the new ignore
+    behavior, ensuring our test suite remains consistent.
+  - >-
+    This change is purely additive to the core logic and does not require any
+    CLI flag changes at this time, as it's a sensible default behavior.
+  - '### 1. Update Core Extraction Logic'
+  - >-
+    I'll start by modifying `src/core.ts` to include the filtering logic. I'll
+    add a helper function `isIgnored` and integrate it into the
+    `createPathExtractionPipeline`.
+  - '### 2. Update and Add Test Cases'
+  - >-
+    Next, I'll update `test/unit/core.fixtures.yaml` to reflect the new
+    behavior. I'll remove `bun.lockb` from an existing test's expectations and
+    add new tests specifically for the ignore functionality.
+  - >-
+    These changes implement the auto-ignore feature and ensure it's properly
+    tested. The tool is now smarter about the paths it extracts by default.
+operations:
+  - type: write
+    path: src/core.ts
+    content: >
+      --- src/core.ts
+
+      +++ src/core.ts
+
+      @@ -16,6 +16,29 @@
+          */
+         unique?: boolean;
+       };
+      +
+
+      +const DEFAULT_IGNORE_DIRS = ['node_modules', '.git', 'dist', 'build'];
+
+      +const DEFAULT_IGNORE_FILES = ['package-lock.json', 'bun.lockb'];
+
+      +
+
+      +/**
+
+      + * Checks if a given path matches any of the default ignore patterns.
+
+      + * @param p The path string to check.
+
+      + * @returns True if the path should be ignored, false otherwise.
+
+      + */
+
+      +const isIgnored = (p: string): boolean => {
+
+      +  // Check against ignored directory patterns. This is a simple check; we
+      see if
+
+      +  // any path segment is an exact match for a directory we want to
+      ignore.
+
+      +  // This avoids accidentally filtering 'distribution/file.js'.
+
+      +  const segments = p.split(/[\\\/]/);
+
+      +  if (segments.some(segment => DEFAULT_IGNORE_DIRS.includes(segment))) {
+
+      +    return true;
+
+      +  }
+
+      +
+
+      +  // Check against ignored file patterns by looking at the basename.
+
+      +  const basename = path.basename(p);
+
+      +  return DEFAULT_IGNORE_FILES.includes(basename);
+
+      +};
+       
+       // This regex finds file paths, including optional line/column numbers. It's
+       // designed to be comprehensive, supporting Windows, Unix, absolute, and
+      @@ -58,16 +81,19 @@
+              .replace(/[.,;]$/, '')     // a/b/c, -> a/b/c
+              .replace(/\\\\/g, '\\')    // Normalize double backslashes to single
+           );
+      +
+
+      +    // 3. Filter out commonly ignored paths (e.g., node_modules).
+
+      +    const filteredPaths = cleanedPaths.filter(p => !isIgnored(p));
+       
+      -    // 3. (Optional) Filter for unique paths.
+
+      -    const uniquePaths = unique ? Array.from(new Set(cleanedPaths)) :
+      cleanedPaths;
+
+      +    // 4. (Optional) Filter for unique paths.
+
+      +    const uniquePaths = unique ? Array.from(new Set(filteredPaths)) :
+      filteredPaths;
+       
+      -    // 4. (Optional) Resolve paths to be absolute.
+
+      +    // 5. (Optional) Resolve paths to be absolute.
+           const resolvedPaths = absolute
+             ? uniquePaths.map(p => path.resolve(cwd, p))
+             : uniquePaths;
+       
+           return resolvedPaths;
+         };
+       };
+    patchStrategy: standard-diff
+  - type: write
+    path: test/unit/core.fixtures.yaml
+    content: |
+      --- test/unit/core.fixtures.yaml
+      +++ test/unit/core.fixtures.yaml
+      @@ -37,7 +37,6 @@
+           The project uses bun.lockb and has a README.md.
+           But this is: package.json
+         expected:
+      -    - "bun.lockb"
+           - "README.md"
+           - "package.json"
+       
+      @@ -62,3 +61,23 @@
+         options: {}
+         input: "No paths here."
+         expected: []
+      +
+      +- name: "Should ignore common transient/generated directories"
+      +  options: {}
+      +  input: |
+      +    Path in node_modules/package/file.js
+      +    Path in .git/hooks/pre-commit
+      +    Path in dist/bundle.js
+      +    Path in project/build/output.css
+      +    A file called distribution/file.js should not be ignored.
+      +  expected:
+      +    - "distribution/file.js"
+      +
+      +- name: "Should ignore common lockfiles"
+      +  options: {}
+      +  input: |
+      +    This project uses bun.lockb and package-lock.json.
+      +    But this is fine: my-package.json
+      +  expected:
+      +    - "my-package.json"
+    patchStrategy: standard-diff
+snapshot:
+  src/core.ts: >-
+    import path from 'node:path';
+
+
+    /**
+     * Options for path extraction.
+     */
+    export type Options = {
+      /**
+       * Convert all found paths to absolute paths.
+       * @default false
+       */
+      absolute?: boolean;
+      /**
+       * The base directory for resolving relative paths.
+       * @default process.cwd()
+       */
+      cwd?: string;
+      /**
+       * Ensure the returned list contains only unique paths.
+       * @default true
+       */
+      unique?: boolean;
+    };
+
+
+    // This regex finds file paths, including optional line/column numbers. It's
+
+    // designed to be comprehensive, supporting Windows, Unix, absolute, and
+
+    // relative paths. The regex is structured to match complete paths:
+
+    // 1. Windows absolute paths (C:\path\to\file)
+
+    // 2. Unix absolute paths (/path/to/file)
+
+    // 3. Relative paths with separators (src/file.ts, ./dist, ../parent)
+
+    // 4. Standalone filenames with extensions (README.md, package.json)
+
+    const PATH_REGEX = new RegExp(
+      [
+        // Windows absolute paths: C:\path\to\file (must come first to avoid partial matches)
+        /[a-zA-Z]:[\\\/][^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+
+        // Unix absolute paths: /path/to/file
+        /\/[^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+
+        // Relative paths with separators: ./file, ../file, src/file
+        /(?:\.[\\/]|[^\s\n]+[\\/])[^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+
+        // Standalone filenames with extensions: file.txt, README.md
+        /\b[^\s\n]+\.[a-zA-Z]+\b/.source,
+      ].join('|'),
+      'g',
+    );
+
+
+    /**
+     * A higher-order function that creates a path extraction pipeline.
+     * This functional approach makes the process clear, configurable, and extensible.
+     * @param opts Configuration options for the pipeline.
+     * @returns A function that takes text and returns an array of paths.
+     */
+    const createPathExtractionPipeline = (opts: Options = {}) => {
+      const { absolute = false, cwd = process.cwd(), unique = true } = opts;
+
+      return (text: string): string[] => {
+        // 1. Find all potential paths using the regex.
+        const matches = Array.from(text.matchAll(PATH_REGEX), m => m[0]);
+
+        // 2. Clean up matches: remove trailing line/col numbers and common punctuation.
+        const cleanedPaths = matches.map(p =>
+          p.replace(/(?::\d+)+$/, '') // a/b/c:10:5 -> a/b/c
+           .replace(/[.,;]$/, '')     // a/b/c, -> a/b/c
+           .replace(/\\\\/g, '\\')    // Normalize double backslashes to single
+        );
+
+        // 3. (Optional) Filter for unique paths.
+        const uniquePaths = unique ? Array.from(new Set(cleanedPaths)) : cleanedPaths;
+
+        // 4. (Optional) Resolve paths to be absolute.
+        const resolvedPaths = absolute
+          ? uniquePaths.map(p => path.resolve(cwd, p))
+          : uniquePaths;
+
+        return resolvedPaths;
+      };
+    };
+
+
+    /**
+     * Extracts potential file paths from a blob of text using a configurable pipeline.
+     * @param text The text to search within.
+     * @param opts Configuration options for extraction.
+     * @returns An array of found file paths.
+     */
+    export function extractPaths(text: string, opts: Options = {}): string[] {
+      const extractor = createPathExtractionPipeline(opts);
+      return extractor(text);
+    }
+
+
+    /**
+     * Filters a list of paths, keeping only the ones that exist on disk.
+     * @param paths An array of file paths to check.
+     * @param cwd The working directory to resolve relative paths against.
+     * @returns A promise that resolves to an array of existing file paths.
+     */
+    export async function verifyPaths(paths: string[], cwd: string =
+    process.cwd()): Promise<string[]> {
+      // Concurrently check for the existence of each file.
+      const checks = paths.map(p => {
+        const absolutePath = path.isAbsolute(p) ? p : path.resolve(cwd, p);
+        return Bun.file(absolutePath).exists();
+      });
+      const existenceChecks = await Promise.all(checks);
+
+      // Filter the original paths array based on the results of the existence checks.
+      const existingPaths = paths.filter((_, i) => existenceChecks[i]);
+
+      return existingPaths;
+    }
+  test/unit/core.fixtures.yaml: |-
+    - name: "Basic path extraction"
+      options: {}
+      input: |
+        Here are some files: src/core.ts and ./README.md
+        Also, a log file /var/log/syslog
+      expected:
+        - "src/core.ts"
+        - "./README.md"
+        - "/var/log/syslog"
+
+    - name: "Windows path extraction"
+      options: {}
+      input: |
+        Error in C:\\Users\\Test\\project\\src\\file.js
+        Check the config at .\\config\\settings.json
+      expected:
+        - "C:\\Users\\Test\\project\\src\\file.js"
+        - ".\\config\\settings.json"
+
+    - name: "Path extraction with line and column numbers"
+      options: {}
+      input: |
+        src/components/Button.tsx:5:10 - error
+        dist/bundle.js:1:12345
+        /app/main.py:42
+      expected:
+        - "src/components/Button.tsx"
+        - "dist/bundle.js"
+        - "/app/main.py"
+
+    - name: "Standalone filenames with extensions"
+      options: {}
+      input: |
+        The project uses bun.lockb and has a README.md.
+        But this is: package.json
+      expected:
+        - "bun.lockb"
+        - "README.md"
+        - "package.json"
+
+    - name: "Unique paths option (default)"
+      options: { unique: true }
+      input: "See src/core.ts and again src/core.ts"
+      expected: ["src/core.ts"]
+
+    - name: "Non-unique paths option"
+      options: { unique: false }
+      input: "See src/core.ts and again src/core.ts"
+      expected: ["src/core.ts", "src/core.ts"]
+
+    - name: "Absolute paths option"
+      options: { absolute: true, cwd: "/home/user/project" }
+      input: |
+        Relative path: src/index.ts
+        Dot-slash path: ./dist/main.js
+        Absolute path is unchanged: /etc/hosts
+      expected:
+        - "/home/user/project/src/index.ts"
+        - "/home/user/project/dist/main.js"
+        - "/etc/hosts"
+
+    - name: "Empty input"
+      options: {}
+      input: "No paths here."
+      expected: []
+approved: true
+linesAdded: null
+linesRemoved: null
+linesDifference: null
+gitCommittedAt: null
+status: committed
+id: 20

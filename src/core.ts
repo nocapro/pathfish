@@ -21,6 +21,28 @@ export type Options = {
   unique?: boolean;
 };
 
+const DEFAULT_IGNORE_DIRS = ['node_modules', '.git', 'dist', 'build'];
+const DEFAULT_IGNORE_FILES = ['package-lock.json', 'bun.lockb'];
+
+/**
+ * Checks if a given path matches any of the default ignore patterns.
+ * @param p The path string to check.
+ * @returns True if the path should be ignored, false otherwise.
+ */
+const isIgnored = (p: string): boolean => {
+  // Check against ignored directory patterns. This is a simple check; we see if
+  // any path segment is an exact match for a directory we want to ignore.
+  // This avoids accidentally filtering 'distribution/file.js'.
+  const segments = p.split(/[\\\/]/);
+  if (segments.some(segment => DEFAULT_IGNORE_DIRS.includes(segment))) {
+    return true;
+  }
+
+  // Check against ignored file patterns by looking at the basename.
+  const basename = path.basename(p);
+  return DEFAULT_IGNORE_FILES.includes(basename);
+};
+
 // This regex finds file paths, including optional line/column numbers. It's
 // designed to be comprehensive, supporting Windows, Unix, absolute, and
 // relative paths. The regex is structured to match complete paths:
@@ -65,10 +87,13 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
        .replace(/\\\\/g, '\\')    // Normalize double backslashes to single
     );
 
-    // 3. (Optional) Filter for unique paths.
-    const uniquePaths = unique ? Array.from(new Set(cleanedPaths)) : cleanedPaths;
+    // 3. Filter out commonly ignored paths (e.g., node_modules).
+    const filteredPaths = cleanedPaths.filter(p => !isIgnored(p));
 
-    // 4. (Optional) Resolve paths to be absolute.
+    // 4. (Optional) Filter for unique paths.
+    const uniquePaths = unique ? Array.from(new Set(filteredPaths)) : filteredPaths;
+
+    // 5. (Optional) Resolve paths to be absolute.
     const resolvedPaths = absolute
       ? uniquePaths.map(p => path.resolve(cwd, p))
       : uniquePaths;

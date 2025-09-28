@@ -25,7 +25,6 @@
     /app/main.py:42
   expected:
     - "src/components/Button.tsx"
-    - "dist/bundle.js"
     - "/app/main.py"
 
 - name: "Standalone filenames with extensions"
@@ -34,7 +33,6 @@
     The project uses bun.lockb and has a README.md.
     But this is: package.json
   expected:
-    - "bun.lockb"
     - "README.md"
     - "package.json"
 
@@ -56,10 +54,28 @@
     Absolute path is unchanged: /etc/hosts
   expected:
     - "/home/user/project/src/index.ts"
-    - "/home/user/project/dist/main.js"
     - "/etc/hosts"
 
 - name: "Empty input"
   options: {}
   input: "No paths here."
   expected: []
+
+- name: "Should ignore common transient/generated directories"
+  options: {}
+  input: |
+    Path in node_modules/package/file.js
+    Path in .git/hooks/pre-commit
+    Path in dist/bundle.js
+    Path in project/build/output.css
+    A file called distribution/file.js should not be ignored.
+  expected:
+    - "distribution/file.js"
+
+- name: "Should ignore common lockfiles"
+  options: {}
+  input: |
+    This project uses bun.lockb and package-lock.json.
+    But this is fine: my-package.json
+  expected:
+    - "my-package.json"

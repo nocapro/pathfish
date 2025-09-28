@@ -6,7 +6,7 @@ prepare for npm publishing. implement eslint and tsup.
 
 add more comprehensive test cases and coverage. also add more complex fixtures domain and files
 
-===
+=== DONE
 
 auto ignore files and dirs: like .gitignore package-lock.json node_modules .bun.lockb etc
 
