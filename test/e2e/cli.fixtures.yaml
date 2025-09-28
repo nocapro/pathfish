@@ -11,6 +11,8 @@
 - name: "should read from stdin and output pretty json by default"
   args: []
   stdin: "path is src/index.ts"
+  files:
+    "src/index.ts": ""
   expected_stdout: |
     [
       "src/index.ts"
@@ -19,12 +21,15 @@
 - name: "should output compact json with --pretty=false"
   args: ["--pretty=false"]
   stdin: "path is src/index.ts"
+  files:
+    "src/index.ts": ""
   expected_stdout: '["src/index.ts"]'
 
 - name: "should read from a file argument"
   args: ["input.log"]
   files:
     "input.log": "path in file is src/index.ts"
+    "src/index.ts": ""
   expected_stdout: |
     [
       "src/index.ts"
@@ -33,6 +38,9 @@
 - name: "should output yaml with --format yaml"
   args: ["--format", "yaml"]
   stdin: "src/app.js and src/style.css"
+  files:
+    "src/app.js": ""
+    "src/style.css": ""
   expected_stdout: |
     - src/app.js
     - src/style.css
@@ -40,24 +48,36 @@
 - name: "should output a list with --format list"
   args: ["--format", "list"]
   stdin: "src/app.js and src/style.css"
+  files:
+    "src/app.js": ""
+    "src/style.css": ""
   expected_stdout: |
     src/app.js
     src/style.css
 
-- name: "should verify existing files with --verify"
-  args: ["--verify", "--format", "list"]
+- name: "should filter out non-existing files by default"
+  args: ["--format", "list"]
   stdin: "good: file1.txt, bad: missing.txt"
   files:
     "file1.txt": "content"
   expected_stdout: "file1.txt"
 
+- name: "should include non-existing files with --no-verify"
+  args: ["--no-verify", "--format", "list"]
+  stdin: "good: file1.txt, bad: missing.txt"
+  files:
+    "file1.txt": "content"
+  expected_stdout: |
+    file1.txt
+    missing.txt
+
 - name: "should make paths absolute with --absolute"
-  args: ["--absolute", "--format", "list"]
+  args: ["--no-verify", "--absolute", "--format", "list"]
   stdin: "relative/path.js"
   expected_stdout: "{{CWD}}/relative/path.js"
 
 - name: "should use specified --cwd for absolute paths"
-  args: ["--absolute", "--format", "list", "--cwd", "{{CWD}}/fake-root"]
+  args: ["--no-verify", "--absolute", "--format", "list", "--cwd", "{{CWD}}/fake-root"]
   stdin: "relative/path.js"
   files: # create the fake root so it's a valid directory
     "fake-root/placeholder.txt": ""
@@ -66,10 +86,12 @@
 - name: "should work with --copy flag (output is unchanged)"
   args: ["--copy", "--format", "list"]
   stdin: "src/main.ts"
+  files:
+    "src/main.ts": ""
   expected_stdout: "src/main.ts"
 
 - name: "should handle a combination of flags"
-  args: ["data.log", "--verify", "--absolute", "--format", "yaml"]
+  args: ["data.log", "--absolute", "--format", "yaml"]
   stdin: "" # Reading from file
   files:
     "data.log": "valid: existing.js, invalid: missing.js"

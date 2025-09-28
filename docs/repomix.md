@@ -36,8 +36,8 @@ import { createFormatter, type Format } from './utils';
  */
 export type PipelineOptions = Options & {
   /**
-   * Filter out paths that do not exist on disk.
-   * @default false
+   * When false, disables filtering of paths that do not exist on disk.
+   * @default true
    */
   verify?: boolean;
   /**
@@ -64,7 +64,7 @@ export async function runPipeline(
   options: PipelineOptions = {},
 ): Promise<string> {
   const {
-    verify: shouldVerify = false,
+    verify: shouldVerify = true,
     format: formatType = 'json',
     pretty = true,
     ...extractOptions
@@ -75,7 +75,7 @@ export async function runPipeline(
 
   // 2. (Optional) Verify that the paths actually exist on disk.
   const verifiedPaths = shouldVerify
-    ? await verifyPaths(initialPaths)
+    ? await verifyPaths(initialPaths, extractOptions.cwd)
     : initialPaths;
 
   // 3. Format the resulting paths into the desired output string.
@@ -122,6 +122,10 @@ export type Format = 'json' | 'yaml' | 'list';
  * @returns A function that takes an array of strings and returns a formatted string.
  */
 export const createFormatter = (format: Format, pretty: boolean) => {
+  if (!['json', 'yaml', 'list'].includes(format)) {
+    // Fail fast if the format is not supported.
+    throw new Error(`Unknown format: ${format}`);
+  }
   return (paths: string[]): string => {
     switch (format) {
       case 'json':
@@ -130,9 +134,6 @@ export const createFormatter = (format: Format, pretty: boolean) => {
         return yaml.dump(paths);
       case 'list':
         return paths.join('\n');
-      default:
-        // This case should be unreachable if argument parsing is correct.
-        throw new Error(`Unknown format: ${format}`);
     }
   };
 };
@@ -168,6 +169,8 @@ export async function copyToClipboard(text: string): Promise<void> {
 - name: "should read from stdin and output pretty json by default"
   args: []
   stdin: "path is src/index.ts"
+  files:
+    "src/index.ts": ""
   expected_stdout: |
     [
       "src/index.ts"
@@ -176,12 +179,15 @@ export async function copyToClipboard(text: string): Promise<void> {
 - name: "should output compact json with --pretty=false"
   args: ["--pretty=false"]
   stdin: "path is src/index.ts"
+  files:
+    "src/index.ts": ""
   expected_stdout: '["src/index.ts"]'
 
 - name: "should read from a file argument"
   args: ["input.log"]
   files:
     "input.log": "path in file is src/index.ts"
+    "src/index.ts": ""
   expected_stdout: |
     [
       "src/index.ts"
@@ -190,6 +196,9 @@ export async function copyToClipboard(text: string): Promise<void> {
 - name: "should output yaml with --format yaml"
   args: ["--format", "yaml"]
   stdin: "src/app.js and src/style.css"
+  files:
+    "src/app.js": ""
+    "src/style.css": ""
   expected_stdout: |
     - src/app.js
     - src/style.css
@@ -197,24 +206,36 @@ export async function copyToClipboard(text: string): Promise<void> {
 - name: "should output a list with --format list"
   args: ["--format", "list"]
   stdin: "src/app.js and src/style.css"
+  files:
+    "src/app.js": ""
+    "src/style.css": ""
   expected_stdout: |
     src/app.js
     src/style.css
 
-- name: "should verify existing files with --verify"
-  args: ["--verify", "--format", "list"]
+- name: "should filter out non-existing files by default"
+  args: ["--format", "list"]
   stdin: "good: file1.txt, bad: missing.txt"
   files:
     "file1.txt": "content"
   expected_stdout: "file1.txt"
 
+- name: "should include non-existing files with --no-verify"
+  args: ["--no-verify", "--format", "list"]
+  stdin: "good: file1.txt, bad: missing.txt"
+  files:
+    "file1.txt": "content"
+  expected_stdout: |
+    file1.txt
+    missing.txt
+
 - name: "should make paths absolute with --absolute"
-  args: ["--absolute", "--format", "list"]
+  args: ["--no-verify", "--absolute", "--format", "list"]
   stdin: "relative/path.js"
   expected_stdout: "{{CWD}}/relative/path.js"
 
 - name: "should use specified --cwd for absolute paths"
-  args: ["--absolute", "--format", "list", "--cwd", "{{CWD}}/fake-root"]
+  args: ["--no-verify", "--absolute", "--format", "list", "--cwd", "{{CWD}}/fake-root"]
   stdin: "relative/path.js"
   files: # create the fake root so it's a valid directory
     "fake-root/placeholder.txt": ""
@@ -223,10 +244,12 @@ export async function copyToClipboard(text: string): Promise<void> {
 - name: "should work with --copy flag (output is unchanged)"
   args: ["--copy", "--format", "list"]
   stdin: "src/main.ts"
+  files:
+    "src/main.ts": ""
   expected_stdout: "src/main.ts"
 
 - name: "should handle a combination of flags"
-  args: ["data.log", "--verify", "--absolute", "--format", "yaml"]
+  args: ["data.log", "--absolute", "--format", "yaml"]
   stdin: "" # Reading from file
   files:
     "data.log": "valid: existing.js, invalid: missing.js"
@@ -242,6 +265,380 @@ export async function copyToClipboard(text: string): Promise<void> {
   args: ["--format", "list"]
   stdin: "no paths here"
   expected_stdout: ""
+````
+
+## File: test/integration/engine.fixtures.yaml
+````yaml
+- name: "Basic pipeline: extract and format as pretty JSON"
+  options: { format: 'json', pretty: true }
+  input: "File is src/index.ts and another is ./README.md"
+  files:
+    "src/index.ts": ""
+    "./README.md": ""
+  expected: |
+    [
+      "src/index.ts",
+      "./README.md"
+    ]
+
+- name: "Pipeline with verification, filtering out non-existent paths"
+  options: { format: 'list' } # verify: true is now default
+  input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
+  files:
+    'file1.txt': 'content'
+    'dir/file2.log': 'log content'
+  expected: |
+    file1.txt
+    dir/file2.log
+
+- name: "Pipeline with absolute path conversion"
+  options: { absolute: true, format: 'json', pretty: false, verify: false }
+  input: "Relative path: src/main.js and ./index.html"
+  files: {}
+  expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
+
+- name: "Pipeline with verification and absolute path conversion"
+  options: { absolute: true, format: 'yaml' } # verify: true is now default
+  input: "Real: src/app.ts. Fake: src/fake.ts"
+  files:
+    'src/app.ts': 'export default {}'
+  expected: |
+    - {{CWD}}/src/app.ts
+
+- name: "Pipeline with different format (yaml) and no unique"
+  options: { format: 'yaml', unique: false, verify: false }
+  input: "path: a.txt, again: a.txt"
+  files: {}
+  expected: |
+    - a.txt
+    - a.txt
+
+- name: "Pipeline should produce empty output for no matches"
+  options: { format: 'json' }
+  input: "Just some regular text without any paths."
+  files: {}
+  expected: "[]"
+````
+
+## File: test/unit/core.fixtures.yaml
+````yaml
+- name: "Basic path extraction"
+  options: {}
+  input: |
+    Here are some files: src/core.ts and ./README.md
+    Also, a log file /var/log/syslog
+  expected:
+    - "src/core.ts"
+    - "./README.md"
+    - "/var/log/syslog"
+
+- name: "Windows path extraction"
+  options: {}
+  input: |
+    Error in C:\\Users\\Test\\project\\src\\file.js
+    Check the config at .\\config\\settings.json
+  expected:
+    - "C:\\Users\\Test\\project\\src\\file.js"
+    - ".\\config\\settings.json"
+
+- name: "Path extraction with line and column numbers"
+  options: {}
+  input: |
+    src/components/Button.tsx:5:10 - error
+    dist/bundle.js:1:12345
+    /app/main.py:42
+  expected:
+    - "src/components/Button.tsx"
+    - "dist/bundle.js"
+    - "/app/main.py"
+
+- name: "Standalone filenames with extensions"
+  options: {}
+  input: |
+    The project uses bun.lockb and has a README.md.
+    But this is: package.json
+  expected:
+    - "bun.lockb"
+    - "README.md"
+    - "package.json"
+
+- name: "Unique paths option (default)"
+  options: { unique: true }
+  input: "See src/core.ts and again src/core.ts"
+  expected: ["src/core.ts"]
+
+- name: "Non-unique paths option"
+  options: { unique: false }
+  input: "See src/core.ts and again src/core.ts"
+  expected: ["src/core.ts", "src/core.ts"]
+
+- name: "Absolute paths option"
+  options: { absolute: true, cwd: "/home/user/project" }
+  input: |
+    Relative path: src/index.ts
+    Dot-slash path: ./dist/main.js
+    Absolute path is unchanged: /etc/hosts
+  expected:
+    - "/home/user/project/src/index.ts"
+    - "/home/user/project/dist/main.js"
+    - "/etc/hosts"
+
+- name: "Empty input"
+  options: {}
+  input: "No paths here."
+  expected: []
+````
+
+## File: test/unit/utils.fixtures.yaml
+````yaml
+- name: "should format as a JSON array (pretty)"
+  format: "json"
+  pretty: true
+  input: ["src/index.ts", "README.md"]
+  expected: |
+    [
+      "src/index.ts",
+      "README.md"
+    ]
+
+- name: "should format as a JSON array (compact)"
+  format: "json"
+  pretty: false
+  input: ["src/index.ts", "README.md"]
+  expected: '["src/index.ts","README.md"]'
+
+- name: "should format as a YAML list"
+  format: "yaml"
+  pretty: true # pretty is ignored for yaml in current impl
+  input: ["src/index.ts", "README.md"]
+  expected: |
+    - src/index.ts
+    - README.md
+
+- name: "should format as a newline-separated list"
+  format: "list"
+  pretty: true # pretty is ignored for list
+  input: ["src/index.ts", "README.md"]
+  expected: |
+    src/index.ts
+    README.md
+
+- name: "should handle empty input correctly for all formats"
+  cases:
+    - format: "json"
+      pretty: true
+      input: []
+      expected: "[]"
+    - format: "yaml"
+      pretty: true
+      input: []
+      expected: "[]\n" # js-yaml adds a newline for empty array
+    - format: "list"
+      pretty: true
+      input: []
+      expected: ""
+````
+
+## File: src/cli.ts
+````typescript
+#!/usr/bin/env bun
+
+import mri from 'mri';
+import { runPipeline, type PipelineOptions } from './engine';
+import { copyToClipboard, type Format } from './utils';
+import { version } from '../package.json' with { type: 'json' };
+
+const HELP_TEXT = `
+pathfish v${version}
+Fuzzy-extract file paths from any blob of text.
+
+Usage:
+  pathfish [file] [options]
+  cat [file] | pathfish [options]
+
+Options:
+  --format <format>  Output format: json, yaml, list (default: json)
+  --pretty           Pretty-print JSON output (default: true)
+  --absolute         Convert all paths to absolute
+  --cwd <dir>        Base directory for resolving paths (default: process.cwd())
+  --no-verify        Do not filter out paths that do not exist on disk
+  --copy             Copy the final output to the clipboard
+  --help, -h         Show this help message
+  --version, -v      Show version number
+`;
+
+type CliArgs = {
+  _: string[];
+  help?: boolean;
+  version?: boolean;
+  pretty?: boolean;
+  absolute?: boolean;
+  verify?: boolean; // mri sets this to false for --no-verify
+  copy?: boolean;
+  format?: string;
+  cwd?: string;
+};
+
+
+/**
+ * Main CLI entry point.
+ * This function orchestrates the entire process from argument parsing to final output.
+ */
+async function run() {
+  const args: CliArgs = mri(process.argv.slice(2), {
+    boolean: ['help', 'version', 'pretty', 'absolute', 'copy'],
+    string: ['format', 'cwd'],
+    alias: { h: 'help', v: 'version' },
+    default: {
+      pretty: true,
+      format: 'json',
+    },
+  });
+
+  if (args.help) {
+    console.log(HELP_TEXT);
+    return;
+  }
+
+  if (args.version) {
+    console.log(`v${version}`);
+    return;
+  }
+
+  const inputFile = args._[0];
+  const inputText = inputFile
+    ? await Bun.file(inputFile).text()
+    : await Bun.stdin.text();
+
+  // Map CLI arguments to engine pipeline options.
+  const options: PipelineOptions = {
+    absolute: args.absolute,
+    cwd: args.cwd,
+    verify: args.verify !== false, // Default to true, false only on --no-verify
+    format: args.format as Format,
+    pretty: args.pretty,
+  };
+
+  const result = await runPipeline(inputText, options);
+  console.log(result);
+
+  // Copying is a side effect that happens after the result is ready.
+  if (args.copy) await copyToClipboard(result);
+}
+
+run().catch(err => {
+  const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+  // Use console.error to write to stderr
+  console.error(`\x1b[31mError: ${errorMessage}\x1b[0m`);
+  process.exit(1);
+});
+````
+
+## File: src/core.ts
+````typescript
+import path from 'node:path';
+
+/**
+ * Options for path extraction.
+ */
+export type Options = {
+  /**
+   * Convert all found paths to absolute paths.
+   * @default false
+   */
+  absolute?: boolean;
+  /**
+   * The base directory for resolving relative paths.
+   * @default process.cwd()
+   */
+  cwd?: string;
+  /**
+   * Ensure the returned list contains only unique paths.
+   * @default true
+   */
+  unique?: boolean;
+};
+
+// This regex finds file paths, including optional line/column numbers. It's
+// designed to be comprehensive, supporting Windows, Unix, absolute, and
+// relative paths. It's composed of two main parts:
+// 1. The first part finds paths that contain at least one directory separator
+//    (e.g., `src/core.ts`, `./dist`, `/var/log/syslog`). This allows it to
+//    find paths that don't have a file extension.
+// 2. The second part finds standalone filenames that *do* have a file extension
+//    (e.g., `README.md`, `bun.lockb`), using word boundaries.
+// This new regex improves Windows path handling and is structured for clarity.
+const PATH_REGEX = new RegExp(
+  [
+    // Part 1: Full paths (e.g., C:\foo\bar, /foo/bar, ./foo, ../foo, src/foo)
+    /(?:[a-zA-Z]:)?(?:[\\/]|(?:[\w.-]+[\\/]))[\w.-]+(?:[\\/][\w.-]+)*/.source,
+    // Part 2: Standalone filenames with extensions (e.g., README.md)
+    /\b[\w.-]+\.\w+\b/.source,
+  ].join('|'),
+  'g',
+);
+
+/**
+ * A higher-order function that creates a path extraction pipeline.
+ * This functional approach makes the process clear, configurable, and extensible.
+ * @param opts Configuration options for the pipeline.
+ * @returns A function that takes text and returns an array of paths.
+ */
+const createPathExtractionPipeline = (opts: Options = {}) => {
+  const { absolute = false, cwd = process.cwd(), unique = true } = opts;
+
+  return (text: string): string[] => {
+    // 1. Find all potential paths using the regex.
+    const matches = Array.from(text.matchAll(PATH_REGEX), m => m[0]);
+
+    // 2. Clean up matches: remove trailing line/col numbers and common punctuation.
+    const cleanedPaths = matches.map(p =>
+      p.replace(/(?::\d+)+$/, '') // a/b/c:10:5 -> a/b/c
+       .replace(/[.,;]$/, ''),    // a/b/c, -> a/b/c
+    );
+
+    // 3. (Optional) Filter for unique paths.
+    const uniquePaths = unique ? Array.from(new Set(cleanedPaths)) : cleanedPaths;
+
+    // 4. (Optional) Resolve paths to be absolute.
+    const resolvedPaths = absolute
+      ? uniquePaths.map(p => path.resolve(cwd, p))
+      : uniquePaths;
+
+    return resolvedPaths;
+  };
+};
+
+/**
+ * Extracts potential file paths from a blob of text using a configurable pipeline.
+ * @param text The text to search within.
+ * @param opts Configuration options for extraction.
+ * @returns An array of found file paths.
+ */
+export function extractPaths(text: string, opts: Options = {}): string[] {
+  const extractor = createPathExtractionPipeline(opts);
+  return extractor(text);
+}
+
+/**
+ * Filters a list of paths, keeping only the ones that exist on disk.
+ * @param paths An array of file paths to check.
+ * @param cwd The working directory to resolve relative paths against.
+ * @returns A promise that resolves to an array of existing file paths.
+ */
+export async function verifyPaths(paths: string[], cwd: string = process.cwd()): Promise<string[]> {
+  // Concurrently check for the existence of each file.
+  const checks = paths.map(p => {
+    const absolutePath = path.isAbsolute(p) ? p : path.resolve(cwd, p);
+    return Bun.file(absolutePath).exists();
+  });
+  const existenceChecks = await Promise.all(checks);
+
+  // Filter the original paths array based on the results of the existence checks.
+  const existingPaths = paths.filter((_, i) => existenceChecks[i]);
+
+  return existingPaths;
+}
 ````
 
 ## File: test/e2e/cli.test.ts
@@ -310,6 +707,7 @@ describe('cli.ts (E2E)', async () => {
         const { stdout, stderr, exitCode } = await runCli(
           processedArgs,
           stdin,
+          tempDir, // Run the CLI process inside the temp directory
         );
 
         // Assert exit code
@@ -338,57 +736,6 @@ describe('cli.ts (E2E)', async () => {
     }
   });
 });
-````
-
-## File: test/integration/engine.fixtures.yaml
-````yaml
-- name: "Basic pipeline: extract and format as pretty JSON"
-  options: { format: 'json', pretty: true }
-  input: "File is src/index.ts and another is ./README.md"
-  files: {}
-  expected: |
-    [
-      "src/index.ts",
-      "README.md"
-    ]
-
-- name: "Pipeline with verification, filtering out non-existent paths"
-  options: { verify: true, format: 'list' }
-  input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
-  files:
-    'file1.txt': 'content'
-    'dir/file2.log': 'log content'
-  expected: |
-    file1.txt
-    dir/file2.log
-
-- name: "Pipeline with absolute path conversion"
-  options: { absolute: true, format: 'json', pretty: false }
-  input: "Relative path: src/main.js and ./index.html"
-  files: {}
-  expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
-
-- name: "Pipeline with verification and absolute path conversion"
-  options: { verify: true, absolute: true, format: 'yaml' }
-  input: "Real: src/app.ts. Fake: src/fake.ts"
-  files:
-    'src/app.ts': 'export default {}'
-  expected: |
-    - {{CWD}}/src/app.ts
-
-- name: "Pipeline with different format (yaml) and no unique"
-  options: { format: 'yaml', unique: false }
-  input: "path: a.txt, again: a.txt"
-  files: {}
-  expected: |
-    - a.txt
-    - a.txt
-
-- name: "Pipeline should produce empty output for no matches"
-  options: { format: 'json' }
-  input: "Just some regular text without any paths."
-  files: {}
-  expected: "[]"
 ````
 
 ## File: test/integration/engine.test.ts
@@ -437,76 +784,6 @@ describe('engine.ts (Integration)', async () => {
     }
   });
 });
-````
-
-## File: test/unit/core.fixtures.yaml
-````yaml
-- name: "Basic path extraction"
-  options: {}
-  input: |
-    Here are some files: src/core.ts and ./README.md.
-    Also, a log file /var/log/syslog.
-  expected:
-    - "src/core.ts"
-    - "./README.md"
-    - "/var/log/syslog"
-
-- name: "Windows path extraction"
-  options: {}
-  input: |
-    Error in C:\\Users\\Test\\project\\src\\file.js
-    Check the config at .\\config\\settings.json
-  expected:
-    - "C:\\Users\\Test\\project\\src\\file.js"
-    - ".\\config\\settings.json"
-
-- name: "Path extraction with line and column numbers"
-  options: {}
-  input: |
-    src/components/Button.tsx:5:10 - error
-    dist/bundle.js:1:12345
-    /app/main.py:42
-  expected:
-    - "src/components/Button.tsx"
-    - "dist/bundle.js"
-    - "/app/main.py"
-
-- name: "Standalone filenames with extensions"
-  options: {}
-  input: |
-    The project uses bun.lockb and has a README.md.
-    This is not a path: some.word.
-    But this is: package.json.
-  expected:
-    - "bun.lockb"
-    - "README.md"
-    - "package.json"
-
-- name: "Unique paths option (default)"
-  options: { unique: true }
-  input: "See src/core.ts and again src/core.ts"
-  expected: ["src/core.ts"]
-
-- name: "Non-unique paths option"
-  options: { unique: false }
-  input: "See src/core.ts and again src/core.ts"
-  expected: ["src/core.ts", "src/core.ts"]
-
-- name: "Absolute paths option"
-  options: { absolute: true, cwd: "/home/user/project" }
-  input: |
-    Relative path: src/index.ts
-    Dot-slash path: ./dist/main.js
-    Absolute path is unchanged: /etc/hosts
-  expected:
-    - "/home/user/project/src/index.ts"
-    - "/home/user/project/dist/main.js"
-    - "/etc/hosts"
-
-- name: "Empty input"
-  options: {}
-  input: "No paths here."
-  expected: []
 ````
 
 ## File: test/unit/core.test.ts
@@ -569,7 +846,7 @@ describe('core.ts', () => {
         path.join(tempDir, 'dir/file2.js'),
       ];
 
-      const result = await verifyPaths(pathsToCheck);
+      const result = await verifyPaths(pathsToCheck, tempDir);
       expect(result.sort()).toEqual(expected.sort());
     });
 
@@ -578,66 +855,16 @@ describe('core.ts', () => {
         path.join(tempDir, 'foo.txt'),
         path.join(tempDir, 'bar.js'),
       ];
-      const result = await verifyPaths(pathsToCheck);
+      const result = await verifyPaths(pathsToCheck, tempDir);
       expect(result).toEqual([]);
     });
 
     it('should return an empty array for empty input', async () => {
-      const result = await verifyPaths([]);
+      const result = await verifyPaths([], tempDir);
       expect(result).toEqual([]);
     });
   });
 });
-````
-
-## File: test/unit/utils.fixtures.yaml
-````yaml
-- name: "should format as a JSON array (pretty)"
-  format: "json"
-  pretty: true
-  input: ["src/index.ts", "README.md"]
-  expected: |
-    [
-      "src/index.ts",
-      "README.md"
-    ]
-
-- name: "should format as a JSON array (compact)"
-  format: "json"
-  pretty: false
-  input: ["src/index.ts", "README.md"]
-  expected: '["src/index.ts","README.md"]'
-
-- name: "should format as a YAML list"
-  format: "yaml"
-  pretty: true # pretty is ignored for yaml in current impl
-  input: ["src/index.ts", "README.md"]
-  expected: |
-    - src/index.ts
-    - README.md
-
-- name: "should format as a newline-separated list"
-  format: "list"
-  pretty: true # pretty is ignored for list
-  input: ["src/index.ts", "README.md"]
-  expected: |
-    src/index.ts
-    README.md
-
-- name: "should handle empty input correctly for all formats"
-  cases:
-    - format: "json"
-      pretty: true
-      input: []
-      expected: "[]"
-    - format: "yaml"
-      pretty: true
-      input: []
-      expected: "[]\n" # js-yaml adds a newline for empty array
-    - format: "list"
-      pretty: true
-      input: []
-      expected: ""
 ````
 
 ## File: test/unit/utils.test.ts
@@ -698,6 +925,7 @@ describe('createFormatter', async () => {
 import { file } from 'bun';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import yaml from 'js-yaml';
 
 /**
@@ -708,7 +936,7 @@ import yaml from 'js-yaml';
 export async function loadYamlFixture<T = unknown>(
   filePath: string,
 ): Promise<T> {
-  const absolutePath = path.resolve(__dirname, filePath);
+  const absolutePath = path.resolve(process.cwd(), 'test', filePath);
   const fileContent = await file(absolutePath).text();
   return yaml.load(fileContent) as T;
 }
@@ -721,7 +949,9 @@ export async function loadYamlFixture<T = unknown>(
 export async function setupTestDirectory(files: {
   [path: string]: string;
 }): Promise<string> {
-  const tempDir = await fs.mkdtemp(path.join(process.cwd(), 'pathfish-test-'));
+  const tempDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'pathfish-test-'),
+  );
   for (const [filePath, content] of Object.entries(files)) {
     const absolutePath = path.join(tempDir, filePath);
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
@@ -741,15 +971,19 @@ export async function cleanupTestDirectory(dirPath: string): Promise<void> {
 /**
  * Executes the CLI in a separate process.
  * @param args An array of command-line arguments.
- * @param stdin An optional string to pipe to the process's stdin.
+ * @param stdinInput An optional string to pipe to the process's stdin.
+ * @param cwd The working directory for the spawned process.
  * @returns A promise that resolves with the process's stdout, stderr, and exit code.
  */
 export async function runCli(
   args: string[],
-  stdin?: string,
+  stdinInput?: string,
+  cwd?: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn(['bun', 'src/cli.ts', ...args], {
-    stdin: stdin ? new TextEncoder().encode(stdin) : 'pipe',
+  const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
+  const proc = Bun.spawn(['bun', 'run', cliPath, ...args], {
+    stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
+    cwd,
   });
 
   const stdout = await new Response(proc.stdout).text();
@@ -757,194 +991,6 @@ export async function runCli(
   const exitCode = await proc.exited;
 
   return { stdout, stderr, exitCode };
-}
-````
-
-## File: src/cli.ts
-````typescript
-#!/usr/bin/env bun
-
-import mri from 'mri';
-import { runPipeline, type PipelineOptions } from './engine';
-import { copyToClipboard, type Format } from './utils';
-import { version } from '../package.json' with { type: 'json' };
-
-const HELP_TEXT = `
-pathfish v${version}
-Fuzzy-extract file paths from any blob of text.
-
-Usage:
-  pathfish [file] [options]
-  cat [file] | pathfish [options]
-
-Options:
-  --format <format>  Output format: json, yaml, list (default: json)
-  --pretty           Pretty-print JSON output (default: true)
-  --absolute         Convert all paths to absolute
-  --cwd <dir>        Base directory for resolving paths (default: process.cwd())
-  --verify           Filter out paths that do not exist on disk
-  --copy             Copy the final output to the clipboard
-  --help, -h         Show this help message
-  --version, -v      Show version number
-`;
-
-type CliArgs = {
-  _: string[];
-  help?: boolean;
-  version?: boolean;
-  pretty?: boolean;
-  absolute?: boolean;
-  verify?: boolean;
-  copy?: boolean;
-  format?: string;
-  cwd?: string;
-};
-
-
-/**
- * Main CLI entry point.
- * This function orchestrates the entire process from argument parsing to final output.
- */
-async function run() {
-  const args: CliArgs = mri(process.argv.slice(2), {
-    boolean: ['help', 'version', 'pretty', 'absolute', 'verify', 'copy'],
-    string: ['format', 'cwd'],
-    alias: { h: 'help', v: 'version' },
-    default: {
-      pretty: true,
-      format: 'json',
-    },
-  });
-
-  if (args.help) {
-    console.log(HELP_TEXT);
-    return;
-  }
-
-  if (args.version) {
-    console.log(`v${version}`);
-    return;
-  }
-
-  const inputFile = args._[0];
-  const inputText = inputFile
-    ? await Bun.file(inputFile).text()
-    : await Bun.stdin.text();
-
-  // Map CLI arguments to engine pipeline options.
-  const options: PipelineOptions = {
-    absolute: args.absolute,
-    cwd: args.cwd,
-    verify: args.verify,
-    format: args.format as Format,
-    pretty: args.pretty,
-  };
-
-  const result = await runPipeline(inputText, options);
-  console.log(result);
-
-  // Copying is a side effect that happens after the result is ready.
-  if (args.copy) await copyToClipboard(result);
-}
-
-run().catch(err => {
-  const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-  // Use console.error to write to stderr
-  console.error(`\x1b[31mError: ${errorMessage}\x1b[0m`);
-  process.exit(1);
-});
-````
-
-## File: src/core.ts
-````typescript
-import path from 'node:path';
-
-/**
- * Options for path extraction.
- */
-export type Options = {
-  /**
-   * Convert all found paths to absolute paths.
-   * @default false
-   */
-  absolute?: boolean;
-  /**
-   * The base directory for resolving relative paths.
-   * @default process.cwd()
-   */
-  cwd?: string;
-  /**
-   * Ensure the returned list contains only unique paths.
-   * @default true
-   */
-  unique?: boolean;
-};
-
-// This regex finds file paths, including optional line/column numbers. It's
-// designed to be comprehensive, supporting Windows, Unix, absolute, and
-// relative paths. It's composed of two main parts:
-// 1. The first part finds paths that contain at least one directory separator
-//    (e.g., `src/core.ts`, `./dist`, `/var/log/syslog`). This allows it to
-//    find paths that don't have a file extension.
-// 2. The second part finds standalone filenames that *do* have a file extension
-//    (e.g., `README.md`, `bun.lockb`), using word boundaries to avoid matching
-//    parts of other strings.
-const PATH_REGEX = /(?:(?:[a-zA-Z]:[\\\/]|\.{1,2}[\\\/]|\/))?(?:[\w.-]+[\\\/])+[\w.-]+(?::\d+)?(?::\d+)?|(?:\b[\w.-]+\.\w+\b)(?::\d+)?(?::\d+)?/g;
-
-/**
- * A higher-order function that creates a path extraction pipeline.
- * This functional approach makes the process clear, configurable, and extensible.
- * @param opts Configuration options for the pipeline.
- * @returns A function that takes text and returns an array of paths.
- */
-const createPathExtractionPipeline = (opts: Options = {}) => {
-  const { absolute = false, cwd = process.cwd(), unique = true } = opts;
-
-  return (text: string): string[] => {
-    // 1. Find all potential paths using the regex.
-    const matches = Array.from(text.matchAll(PATH_REGEX), m => m[0]);
-
-    // 2. Clean up the matches by removing trailing line/column numbers.
-    const cleanedPaths = matches.map(p => p.replace(/(?::\d+)+$/, ''));
-
-    // 3. (Optional) Filter for unique paths.
-    const uniquePaths = unique ? Array.from(new Set(cleanedPaths)) : cleanedPaths;
-
-    // 4. (Optional) Resolve paths to be absolute.
-    const resolvedPaths = absolute
-      ? uniquePaths.map(p => path.resolve(cwd, p))
-      : uniquePaths;
-
-    return resolvedPaths;
-  };
-};
-
-/**
- * Extracts potential file paths from a blob of text using a configurable pipeline.
- * @param text The text to search within.
- * @param opts Configuration options for extraction.
- * @returns An array of found file paths.
- */
-export function extractPaths(text: string, opts: Options = {}): string[] {
-  const extractor = createPathExtractionPipeline(opts);
-  return extractor(text);
-}
-
-/**
- * Filters a list of paths, keeping only the ones that exist on disk.
- * @param paths An array of file paths to check.
- * @returns A promise that resolves to an array of existing file paths.
- */
-export async function verifyPaths(paths: string[]): Promise<string[]> {
-  // Concurrently check for the existence of each file.
-  const existenceChecks = await Promise.all(
-    paths.map(p => Bun.file(p).exists()),
-  );
-
-  // Filter the original paths array based on the results of the existence checks.
-  const existingPaths = paths.filter((_, i) => existenceChecks[i]);
-
-  return existingPaths;
 }
 ````
 
@@ -1124,39 +1170,6 @@ bun run build
 MIT
 ````
 
-## File: package.json
-````json
-{
-  "name": "pathfish",
-  "version": "0.1.0",
-  "module": "src/index.ts",
-  "type": "module",
-  "private": true,
-  "bin": {
-    "pathfish": "src/cli.ts"
-  },
-  "files": [
-    "src"
-  ],
-  "dependencies": {
-    "clipboardy": "^4.0.0",
-    "js-yaml": "^4.1.0",
-    "mri": "^1.2.0"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "@types/js-yaml": "^4.0.9",
-    "@types/mri": "^1.1.5"
-  },
-  "scripts": {
-    "test": "bun test test"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
-}
-````
-
 ## File: tsconfig.json
 ````json
 {
@@ -1188,5 +1201,38 @@ MIT
     "noPropertyAccessFromIndexSignature": false
   },
   "include": ["src", "test"]
+}
+````
+
+## File: package.json
+````json
+{
+  "name": "pathfish",
+  "version": "0.1.0",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "pathfish": "src/cli.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "clipboardy": "^4.0.0",
+    "js-yaml": "^4.1.0",
+    "mri": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/js-yaml": "^4.0.9",
+    "@types/mri": "^1.1.5"
+  },
+  "scripts": {
+    "test": "bun test test"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
 }
 ````

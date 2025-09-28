@@ -56,7 +56,7 @@ describe('core.ts', () => {
         path.join(tempDir, 'dir/file2.js'),
       ];
 
-      const result = await verifyPaths(pathsToCheck);
+      const result = await verifyPaths(pathsToCheck, tempDir);
       expect(result.sort()).toEqual(expected.sort());
     });
 
@@ -65,12 +65,12 @@ describe('core.ts', () => {
         path.join(tempDir, 'foo.txt'),
         path.join(tempDir, 'bar.js'),
       ];
-      const result = await verifyPaths(pathsToCheck);
+      const result = await verifyPaths(pathsToCheck, tempDir);
       expect(result).toEqual([]);
     });
 
     it('should return an empty array for empty input', async () => {
-      const result = await verifyPaths([]);
+      const result = await verifyPaths([], tempDir);
       expect(result).toEqual([]);
     });
   });

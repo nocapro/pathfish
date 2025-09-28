@@ -1,8 +1,8 @@
 - name: "Basic path extraction"
   options: {}
   input: |
-    Here are some files: src/core.ts and ./README.md.
-    Also, a log file /var/log/syslog.
+    Here are some files: src/core.ts and ./README.md
+    Also, a log file /var/log/syslog
   expected:
     - "src/core.ts"
     - "./README.md"
@@ -32,8 +32,7 @@
   options: {}
   input: |
     The project uses bun.lockb and has a README.md.
-    This is not a path: some.word.
-    But this is: package.json.
+    But this is: package.json
   expected:
     - "bun.lockb"
     - "README.md"

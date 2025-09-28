@@ -18,7 +18,7 @@ Options:
   --pretty           Pretty-print JSON output (default: true)
   --absolute         Convert all paths to absolute
   --cwd <dir>        Base directory for resolving paths (default: process.cwd())
-  --verify           Filter out paths that do not exist on disk
+  --no-verify        Do not filter out paths that do not exist on disk
   --copy             Copy the final output to the clipboard
   --help, -h         Show this help message
   --version, -v      Show version number
@@ -30,7 +30,7 @@ type CliArgs = {
   version?: boolean;
   pretty?: boolean;
   absolute?: boolean;
-  verify?: boolean;
+  verify?: boolean; // mri sets this to false for --no-verify
   copy?: boolean;
   format?: string;
   cwd?: string;
@@ -43,7 +43,7 @@ type CliArgs = {
  */
 async function run() {
   const args: CliArgs = mri(process.argv.slice(2), {
-    boolean: ['help', 'version', 'pretty', 'absolute', 'verify', 'copy'],
+    boolean: ['help', 'version', 'pretty', 'absolute', 'copy'],
     string: ['format', 'cwd'],
     alias: { h: 'help', v: 'version' },
     default: {
@@ -71,7 +71,7 @@ async function run() {
   const options: PipelineOptions = {
     absolute: args.absolute,
     cwd: args.cwd,
-    verify: args.verify,
+    verify: args.verify !== false, // Default to true, false only on --no-verify
     format: args.format as Format,
     pretty: args.pretty,
   };

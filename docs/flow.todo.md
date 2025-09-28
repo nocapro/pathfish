@@ -6,6 +6,16 @@ prepare for npm publishing. implement eslint and tsup.
 
 add more comprehensive test cases and coverage. also add more complex fixtures domain and files
 
+===
+
+auto ignore files and dirs: like .gitignore package-lock.json node_modules .bun.lockb etc
+
+===
+
+the concept of `verify is exist` actually to output paths that really exist and are valid and this should be default behavior. so please update test cases and logic
+
+also focus on end goal of readme.md which is real production ready implementation
+
 === DONE
 
 all parts executed. now

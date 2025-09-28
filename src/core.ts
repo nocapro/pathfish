@@ -28,9 +28,17 @@ export type Options = {
 //    (e.g., `src/core.ts`, `./dist`, `/var/log/syslog`). This allows it to
 //    find paths that don't have a file extension.
 // 2. The second part finds standalone filenames that *do* have a file extension
-//    (e.g., `README.md`, `bun.lockb`), using word boundaries to avoid matching
-//    parts of other strings.
-const PATH_REGEX = /(?:(?:[a-zA-Z]:[\\\/]|\.{1,2}[\\\/]|\/))?(?:[\w.-]+[\\\/])+[\w.-]+(?::\d+)?(?::\d+)?|(?:\b[\w.-]+\.\w+\b)(?::\d+)?(?::\d+)?/g;
+//    (e.g., `README.md`, `bun.lockb`), using word boundaries.
+// This new regex improves Windows path handling and is structured for clarity.
+const PATH_REGEX = new RegExp(
+  [
+    // Part 1: Full paths (e.g., C:\foo\bar, /foo/bar, ./foo, ../foo, src/foo)
+    /(?:[a-zA-Z]:)?(?:[\\/]|(?:[\w.-]+[\\/]))[\w.-]+(?:[\\/][\w.-]+)*/.source,
+    // Part 2: Standalone filenames with extensions (e.g., README.md)
+    /\b[\w.-]+\.\w+\b/.source,
+  ].join('|'),
+  'g',
+);
 
 /**
  * A higher-order function that creates a path extraction pipeline.
@@ -45,8 +53,11 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
     // 1. Find all potential paths using the regex.
     const matches = Array.from(text.matchAll(PATH_REGEX), m => m[0]);
 
-    // 2. Clean up the matches by removing trailing line/column numbers.
-    const cleanedPaths = matches.map(p => p.replace(/(?::\d+)+$/, ''));
+    // 2. Clean up matches: remove trailing line/col numbers and common punctuation.
+    const cleanedPaths = matches.map(p =>
+      p.replace(/(?::\d+)+$/, '') // a/b/c:10:5 -> a/b/c
+       .replace(/[.,;]$/, ''),    // a/b/c, -> a/b/c
+    );
 
     // 3. (Optional) Filter for unique paths.
     const uniquePaths = unique ? Array.from(new Set(cleanedPaths)) : cleanedPaths;
@@ -74,13 +85,16 @@ export function extractPaths(text: string, opts: Options = {}): string[] {
 /**
  * Filters a list of paths, keeping only the ones that exist on disk.
  * @param paths An array of file paths to check.
+ * @param cwd The working directory to resolve relative paths against.
  * @returns A promise that resolves to an array of existing file paths.
  */
-export async function verifyPaths(paths: string[]): Promise<string[]> {
+export async function verifyPaths(paths: string[], cwd: string = process.cwd()): Promise<string[]> {
   // Concurrently check for the existence of each file.
-  const existenceChecks = await Promise.all(
-    paths.map(p => Bun.file(p).exists()),
-  );
+  const checks = paths.map(p => {
+    const absolutePath = path.isAbsolute(p) ? p : path.resolve(cwd, p);
+    return Bun.file(absolutePath).exists();
+  });
+  const existenceChecks = await Promise.all(checks);
 
   // Filter the original paths array based on the results of the existence checks.
   const existingPaths = paths.filter((_, i) => existenceChecks[i]);

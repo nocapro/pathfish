@@ -1,15 +1,17 @@
 - name: "Basic pipeline: extract and format as pretty JSON"
   options: { format: 'json', pretty: true }
   input: "File is src/index.ts and another is ./README.md"
-  files: {}
+  files:
+    "src/index.ts": ""
+    "./README.md": ""
   expected: |
     [
       "src/index.ts",
-      "README.md"
+      "./README.md"
     ]
 
 - name: "Pipeline with verification, filtering out non-existent paths"
-  options: { verify: true, format: 'list' }
+  options: { format: 'list' } # verify: true is now default
   input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
   files:
     'file1.txt': 'content'
@@ -19,13 +21,13 @@
     dir/file2.log
 
 - name: "Pipeline with absolute path conversion"
-  options: { absolute: true, format: 'json', pretty: false }
+  options: { absolute: true, format: 'json', pretty: false, verify: false }
   input: "Relative path: src/main.js and ./index.html"
   files: {}
   expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
 
 - name: "Pipeline with verification and absolute path conversion"
-  options: { verify: true, absolute: true, format: 'yaml' }
+  options: { absolute: true, format: 'yaml' } # verify: true is now default
   input: "Real: src/app.ts. Fake: src/fake.ts"
   files:
     'src/app.ts': 'export default {}'
@@ -33,7 +35,7 @@
     - {{CWD}}/src/app.ts
 
 - name: "Pipeline with different format (yaml) and no unique"
-  options: { format: 'yaml', unique: false }
+  options: { format: 'yaml', unique: false, verify: false }
   input: "path: a.txt, again: a.txt"
   files: {}
   expected: |

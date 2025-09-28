@@ -62,6 +62,7 @@ describe('cli.ts (E2E)', async () => {
         const { stdout, stderr, exitCode } = await runCli(
           processedArgs,
           stdin,
+          tempDir, // Run the CLI process inside the temp directory
         );
 
         // Assert exit code

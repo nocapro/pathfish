@@ -12,7 +12,7 @@ import yaml from 'js-yaml';
 export async function loadYamlFixture<T = unknown>(
   filePath: string,
 ): Promise<T> {
-  const absolutePath = path.resolve(__dirname, filePath);
+  const absolutePath = path.resolve(process.cwd(), 'test', filePath);
   const fileContent = await file(absolutePath).text();
   return yaml.load(fileContent) as T;
 }
@@ -47,15 +47,19 @@ export async function cleanupTestDirectory(dirPath: string): Promise<void> {
 /**
  * Executes the CLI in a separate process.
  * @param args An array of command-line arguments.
- * @param stdin An optional string to pipe to the process's stdin.
+ * @param stdinInput An optional string to pipe to the process's stdin.
+ * @param cwd The working directory for the spawned process.
  * @returns A promise that resolves with the process's stdout, stderr, and exit code.
  */
 export async function runCli(
   args: string[],
-  stdin?: string,
+  stdinInput?: string,
+  cwd?: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn(['bun', 'src/cli.ts', ...args], {
-    stdin: stdin ? new TextEncoder().encode(stdin) : 'pipe',
+  const cliPath = path.resolve(process.cwd(), 'src/cli.ts');
+  const proc = Bun.spawn(['bun', 'run', cliPath, ...args], {
+    stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
+    cwd,
   });
 
   const stdout = await new Response(proc.stdout).text();

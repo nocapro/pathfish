@@ -6,8 +6,8 @@ import { createFormatter, type Format } from './utils';
  */
 export type PipelineOptions = Options & {
   /**
-   * Filter out paths that do not exist on disk.
-   * @default false
+   * When false, disables filtering of paths that do not exist on disk.
+   * @default true
    */
   verify?: boolean;
   /**
@@ -34,7 +34,7 @@ export async function runPipeline(
   options: PipelineOptions = {},
 ): Promise<string> {
   const {
-    verify: shouldVerify = false,
+    verify: shouldVerify = true,
     format: formatType = 'json',
     pretty = true,
     ...extractOptions
@@ -45,7 +45,7 @@ export async function runPipeline(
 
   // 2. (Optional) Verify that the paths actually exist on disk.
   const verifiedPaths = shouldVerify
-    ? await verifyPaths(initialPaths)
+    ? await verifyPaths(initialPaths, extractOptions.cwd)
     : initialPaths;
 
   // 3. Format the resulting paths into the desired output string.

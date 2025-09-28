@@ -11,6 +11,10 @@ export type Format = 'json' | 'yaml' | 'list';
  * @returns A function that takes an array of strings and returns a formatted string.
  */
 export const createFormatter = (format: Format, pretty: boolean) => {
+  if (!['json', 'yaml', 'list'].includes(format)) {
+    // Fail fast if the format is not supported.
+    throw new Error(`Unknown format: ${format}`);
+  }
   return (paths: string[]): string => {
     switch (format) {
       case 'json':
@@ -19,9 +23,6 @@ export const createFormatter = (format: Format, pretty: boolean) => {
         return yaml.dump(paths);
       case 'list':
         return paths.join('\n');
-      default:
-        // This case should be unreachable if argument parsing is correct.
-        throw new Error(`Unknown format: ${format}`);
     }
   };
 };

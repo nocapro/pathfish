@@ -1,0 +1,612 @@
+uuid: 139e7284-93ab-4537-88ab-d248386de624
+projectId: pathfish
+createdAt: '2025-09-28T13:27:23.562Z'
+gitCommitMsg: >-
+  feat: Make path verification default behavior
+
+  The core functionality of pathfish is more useful when it returns paths that
+  are guaranteed to exist on disk. This change makes path verification the
+  default behavior for both the CLI and the programmatic API.
+
+  - The `--verify` CLI flag has been removed. - A new `--no-verify` flag has
+  been added to disable verification and
+    revert to the old behavior of returning all found path-like strings.
+  - The `runPipeline` function in the engine now defaults to `verify: true`. -
+  All relevant integration and E2E tests have been updated to reflect
+    this new default, ensuring that mock files are created where needed or
+    that verification is explicitly disabled for specific test cases.
+promptSummary: >-
+  The user wants to make path verification the default behavior instead of an
+  opt-in flag. This requires updating the core logic, CLI flags, and all related
+  test cases.
+reasoning:
+  - >-
+    This is a great suggestion. Making verification the default behavior
+    simplifies the most common use case and aligns with the principle of "sane
+    defaults." I'll update the logic and test cases accordingly. The `--verify`
+    flag will be replaced with a `--no-verify` flag to opt out of this default
+    behavior.
+  - 'Here are the changes to implement this:'
+  - '### 1. Update Core Engine Logic'
+  - >-
+    First, I'll modify `src/engine.ts` to make path verification the default
+    behavior in the `runPipeline` function.
+  - '### 2. Update CLI Argument Parsing'
+  - >-
+    Next, I'll update `src/cli.ts` to replace the `--verify` flag with
+    `--no-verify`. The powerful `mri` library automatically handles
+    `--no-<flag>` syntax, setting the `flag` property to `false`, which
+    simplifies the logic.
+  - '### 3. Update Integration Tests'
+  - >-
+    The integration tests for the engine need to be updated to reflect that
+    verification is now the default. Tests that previously expected non-existent
+    paths to be returned will now need to explicitly set `verify: false`.
+  - '### 4. Update E2E Tests'
+  - >-
+    Finally, I'll update the end-to-end CLI tests. Many tests now need mock
+    files created to pass the default verification step. I'll also replace the
+    old `--verify` test with a new one for `--no-verify`.
+  - >-
+    These changes make the tool more intuitive by default, while still providing
+    the flexibility to disable verification when needed. I will await your
+    feedback before touching the `README.md`.
+operations:
+  - type: write
+    path: src/engine.ts
+    content: |+
+      --- src/engine.ts
+      +++ src/engine.ts
+      @@ -3,8 +3,8 @@
+       /**
+        * Combined options for the entire path processing pipeline.
+        */
+       export type PipelineOptions = Options & {
+         /**
+      -   * Filter out paths that do not exist on disk.
+      -   * @default false
+      +   * When false, disables filtering of paths that do not exist on disk.
+      +   * @default true
+          */
+         verify?: boolean;
+         /**
+      @@ -25,7 +25,7 @@
+         options: PipelineOptions = {},
+       ): Promise<string> {
+         const {
+      -    verify: shouldVerify = false,
+      +    verify: shouldVerify = true,
+           format: formatType = 'json',
+           pretty = true,
+           ...extractOptions
+
+    patchStrategy: standard-diff
+  - type: write
+    path: src/cli.ts
+    content: >+
+      --- src/cli.ts
+
+      +++ src/cli.ts
+
+      @@ -8,7 +8,7 @@
+         --pretty           Pretty-print JSON output (default: true)
+         --absolute         Convert all paths to absolute
+         --cwd <dir>        Base directory for resolving paths (default: process.cwd())
+      -  --verify           Filter out paths that do not exist on disk
+
+      +  --no-verify        Do not filter out paths that do not exist on disk
+         --copy             Copy the final output to the clipboard
+         --help, -h         Show this help message
+         --version, -v      Show version number
+      @@ -20,7 +20,7 @@
+         version?: boolean;
+         pretty?: boolean;
+         absolute?: boolean;
+      -  verify?: boolean;
+
+      +  verify?: boolean; // mri sets this to false for --no-verify
+         copy?: boolean;
+         format?: string;
+         cwd?: string;
+      @@ -33,7 +33,7 @@
+        */
+       async function run() {
+         const args: CliArgs = mri(process.argv.slice(2), {
+      -    boolean: ['help', 'version', 'pretty', 'absolute', 'verify', 'copy'],
+
+      +    boolean: ['help', 'version', 'pretty', 'absolute', 'copy'],
+           string: ['format', 'cwd'],
+           alias: { h: 'help', v: 'version' },
+           default: {
+      @@ -61,7 +61,7 @@
+         const options: PipelineOptions = {
+           absolute: args.absolute,
+           cwd: args.cwd,
+      -    verify: args.verify,
+
+      +    verify: args.verify !== false, // Default to true, false only on
+      --no-verify
+           format: args.format as Format,
+           pretty: args.pretty,
+         };
+
+    patchStrategy: standard-diff
+  - type: write
+    path: test/integration/engine.fixtures.yaml
+    content: >+
+      --- test/integration/engine.fixtures.yaml
+
+      +++ test/integration/engine.fixtures.yaml
+
+      @@ -2,12 +2,15 @@
+       - name: "Basic pipeline: extract and format as pretty JSON"
+         options: { format: 'json', pretty: true }
+         input: "File is src/index.ts and another is ./README.md"
+      -  files: {}
+
+      +  files:
+
+      +    "src/index.ts": ""
+
+      +    "./README.md": ""
+         expected: |
+           [
+             "src/index.ts",
+             "./README.md"
+           ]
+       
+       - name: "Pipeline with verification, filtering out non-existent paths"
+      -  options: { verify: true, format: 'list' }
+
+      +  options: { format: 'list' } # verify: true is now default
+         input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
+         files:
+           'file1.txt': 'content'
+      @@ -17,19 +20,19 @@
+           dir/file2.log
+       
+       - name: "Pipeline with absolute path conversion"
+      -  options: { absolute: true, format: 'json', pretty: false }
+
+      +  options: { absolute: true, format: 'json', pretty: false, verify: false
+      }
+         input: "Relative path: src/main.js and ./index.html"
+         files: {}
+         expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
+       
+       - name: "Pipeline with verification and absolute path conversion"
+      -  options: { verify: true, absolute: true, format: 'yaml' }
+
+      +  options: { absolute: true, format: 'yaml' } # verify: true is now
+      default
+         input: "Real: src/app.ts. Fake: src/fake.ts"
+         files:
+           'src/app.ts': 'export default {}'
+         expected: |
+           - {{CWD}}/src/app.ts
+       
+       - name: "Pipeline with different format (yaml) and no unique"
+      -  options: { format: 'yaml', unique: false }
+
+      +  options: { format: 'yaml', unique: false, verify: false }
+         input: "path: a.txt, again: a.txt"
+         files: {}
+         expected: |
+
+    patchStrategy: standard-diff
+  - type: write
+    path: test/e2e/cli.fixtures.yaml
+    content: >+
+      --- test/e2e/cli.fixtures.yaml
+
+      +++ test/e2e/cli.fixtures.yaml
+
+      @@ -10,11 +10,16 @@
+       - name: "should read from stdin and output pretty json by default"
+         args: []
+         stdin: "path is src/index.ts"
+      +  files:
+
+      +    "src/index.ts": ""
+         expected_stdout: |
+           [
+             "src/index.ts"
+           ]
+       
+       - name: "should output compact json with --pretty=false"
+         args: ["--pretty=false"]
+         stdin: "path is src/index.ts"
+      +  files:
+
+      +    "src/index.ts": ""
+         expected_stdout: '["src/index.ts"]'
+       
+       - name: "should read from a file argument"
+         args: ["input.log"]
+         files:
+           "input.log": "path in file is src/index.ts"
+      +    "src/index.ts": ""
+         expected_stdout: |
+           [
+             "src/index.ts"
+      @@ -23,37 +28,48 @@
+       - name: "should output yaml with --format yaml"
+         args: ["--format", "yaml"]
+         stdin: "src/app.js and src/style.css"
+      +  files:
+
+      +    "src/app.js": ""
+
+      +    "src/style.css": ""
+         expected_stdout: |
+           - src/app.js
+           - src/style.css
+       
+       - name: "should output a list with --format list"
+         args: ["--format", "list"]
+         stdin: "src/app.js and src/style.css"
+      +  files:
+
+      +    "src/app.js": ""
+
+      +    "src/style.css": ""
+         expected_stdout: |
+           src/app.js
+           src/style.css
+       
+      -- name: "should verify existing files with --verify"
+
+      -  args: ["--verify", "--format", "list"]
+
+      +- name: "should filter out non-existing files by default"
+
+      +  args: ["--format", "list"]
+         stdin: "good: file1.txt, bad: missing.txt"
+         files:
+           "file1.txt": "content"
+         expected_stdout: "file1.txt"
+       
+      +- name: "should include non-existing files with --no-verify"
+
+      +  args: ["--no-verify", "--format", "list"]
+
+      +  stdin: "good: file1.txt, bad: missing.txt"
+
+      +  files:
+
+      +    "file1.txt": "content"
+
+      +  expected_stdout: |
+
+      +    file1.txt
+
+      +    missing.txt
+
+      +
+       - name: "should make paths absolute with --absolute"
+      -  args: ["--absolute", "--format", "list"]
+
+      +  args: ["--no-verify", "--absolute", "--format", "list"]
+         stdin: "relative/path.js"
+         expected_stdout: "{{CWD}}/relative/path.js"
+       
+       - name: "should use specified --cwd for absolute paths"
+      -  args: ["--absolute", "--format", "list", "--cwd", "{{CWD}}/fake-root"]
+
+      +  args: ["--no-verify", "--absolute", "--format", "list", "--cwd",
+      "{{CWD}}/fake-root"]
+         stdin: "relative/path.js"
+         files: # create the fake root so it's a valid directory
+           "fake-root/placeholder.txt": ""
+         expected_stdout: "{{CWD}}/fake-root/relative/path.js"
+       
+       - name: "should work with --copy flag (output is unchanged)"
+         args: ["--copy", "--format", "list"]
+         stdin: "src/main.ts"
+      +  files:
+
+      +    "src/main.ts": ""
+         expected_stdout: "src/main.ts"
+       
+       - name: "should handle a combination of flags"
+      -  args: ["data.log", "--verify", "--absolute", "--format", "yaml"]
+
+      +  args: ["data.log", "--absolute", "--format", "yaml"]
+         stdin: "" # Reading from file
+         files:
+           "data.log": "valid: existing.js, invalid: missing.js"
+
+    patchStrategy: standard-diff
+snapshot:
+  src/cli.ts: |-
+    #!/usr/bin/env bun
+
+    import mri from 'mri';
+    import { runPipeline, type PipelineOptions } from './engine';
+    import { copyToClipboard, type Format } from './utils';
+    import { version } from '../package.json' with { type: 'json' };
+
+    const HELP_TEXT = `
+    pathfish v${version}
+    Fuzzy-extract file paths from any blob of text.
+
+    Usage:
+      pathfish [file] [options]
+      cat [file] | pathfish [options]
+
+    Options:
+      --format <format>  Output format: json, yaml, list (default: json)
+      --pretty           Pretty-print JSON output (default: true)
+      --absolute         Convert all paths to absolute
+      --cwd <dir>        Base directory for resolving paths (default: process.cwd())
+      --verify           Filter out paths that do not exist on disk
+      --copy             Copy the final output to the clipboard
+      --help, -h         Show this help message
+      --version, -v      Show version number
+    `;
+
+    type CliArgs = {
+      _: string[];
+      help?: boolean;
+      version?: boolean;
+      pretty?: boolean;
+      absolute?: boolean;
+      verify?: boolean;
+      copy?: boolean;
+      format?: string;
+      cwd?: string;
+    };
+
+
+    /**
+     * Main CLI entry point.
+     * This function orchestrates the entire process from argument parsing to final output.
+     */
+    async function run() {
+      const args: CliArgs = mri(process.argv.slice(2), {
+        boolean: ['help', 'version', 'pretty', 'absolute', 'verify', 'copy'],
+        string: ['format', 'cwd'],
+        alias: { h: 'help', v: 'version' },
+        default: {
+          pretty: true,
+          format: 'json',
+        },
+      });
+
+      if (args.help) {
+        console.log(HELP_TEXT);
+        return;
+      }
+
+      if (args.version) {
+        console.log(`v${version}`);
+        return;
+      }
+
+      const inputFile = args._[0];
+      const inputText = inputFile
+        ? await Bun.file(inputFile).text()
+        : await Bun.stdin.text();
+
+      // Map CLI arguments to engine pipeline options.
+      const options: PipelineOptions = {
+        absolute: args.absolute,
+        cwd: args.cwd,
+        verify: args.verify,
+        format: args.format as Format,
+        pretty: args.pretty,
+      };
+
+      const result = await runPipeline(inputText, options);
+      console.log(result);
+
+      // Copying is a side effect that happens after the result is ready.
+      if (args.copy) await copyToClipboard(result);
+    }
+
+    run().catch(err => {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+      // Use console.error to write to stderr
+      console.error(`\x1b[31mError: ${errorMessage}\x1b[0m`);
+      process.exit(1);
+    });
+  src/engine.ts: |-
+    import { extractPaths, verifyPaths, type Options } from './core';
+    import { createFormatter, type Format } from './utils';
+
+    /**
+     * Combined options for the entire path processing pipeline.
+     */
+    export type PipelineOptions = Options & {
+      /**
+       * Filter out paths that do not exist on disk.
+       * @default false
+       */
+      verify?: boolean;
+      /**
+       * The output format.
+       * @default 'json'
+       */
+      format?: Format;
+      /**
+       * Pretty-print JSON output.
+       * @default true
+       */
+      pretty?: boolean;
+    };
+
+    /**
+     * Executes the full path extraction and formatting pipeline.
+     * This is the core engine of pathfish, decoupled from the CLI.
+     * @param text The input text to process.
+     * @param options Configuration for the pipeline.
+     * @returns A promise that resolves to the formatted string output.
+     */
+    export async function runPipeline(
+      text: string,
+      options: PipelineOptions = {},
+    ): Promise<string> {
+      const {
+        verify: shouldVerify = false,
+        format: formatType = 'json',
+        pretty = true,
+        ...extractOptions
+      } = options;
+
+      // 1. Extract paths from the text using the core extractor.
+      const initialPaths = extractPaths(text, { unique: true, ...extractOptions });
+
+      // 2. (Optional) Verify that the paths actually exist on disk.
+      const verifiedPaths = shouldVerify
+        ? await verifyPaths(initialPaths, extractOptions.cwd)
+        : initialPaths;
+
+      // 3. Format the resulting paths into the desired output string.
+      const format = createFormatter(formatType, pretty);
+      const formattedOutput = format(verifiedPaths);
+
+      return formattedOutput;
+    }
+  test/integration/engine.fixtures.yaml: |-
+    - name: "Basic pipeline: extract and format as pretty JSON"
+      options: { format: 'json', pretty: true }
+      input: "File is src/index.ts and another is ./README.md"
+      files: {}
+      expected: |
+        [
+          "src/index.ts",
+          "./README.md"
+        ]
+
+    - name: "Pipeline with verification, filtering out non-existent paths"
+      options: { verify: true, format: 'list' }
+      input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
+      files:
+        'file1.txt': 'content'
+        'dir/file2.log': 'log content'
+      expected: |
+        file1.txt
+        dir/file2.log
+
+    - name: "Pipeline with absolute path conversion"
+      options: { absolute: true, format: 'json', pretty: false }
+      input: "Relative path: src/main.js and ./index.html"
+      files: {}
+      expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
+
+    - name: "Pipeline with verification and absolute path conversion"
+      options: { verify: true, absolute: true, format: 'yaml' }
+      input: "Real: src/app.ts. Fake: src/fake.ts"
+      files:
+        'src/app.ts': 'export default {}'
+      expected: |
+        - {{CWD}}/src/app.ts
+
+    - name: "Pipeline with different format (yaml) and no unique"
+      options: { format: 'yaml', unique: false }
+      input: "path: a.txt, again: a.txt"
+      files: {}
+      expected: |
+        - a.txt
+        - a.txt
+
+    - name: "Pipeline should produce empty output for no matches"
+      options: { format: 'json' }
+      input: "Just some regular text without any paths."
+      files: {}
+      expected: "[]"
+  test/e2e/cli.fixtures.yaml: |-
+    - name: "should show help text with --help"
+      args: ["--help"]
+      expected_stdout_contains: "Usage:"
+      exit_code: 0
+
+    - name: "should show version with --version"
+      args: ["--version"]
+      expected_stdout_contains: "v" # Will be checked against package.json version
+      exit_code: 0
+
+    - name: "should read from stdin and output pretty json by default"
+      args: []
+      stdin: "path is src/index.ts"
+      expected_stdout: |
+        [
+          "src/index.ts"
+        ]
+
+    - name: "should output compact json with --pretty=false"
+      args: ["--pretty=false"]
+      stdin: "path is src/index.ts"
+      expected_stdout: '["src/index.ts"]'
+
+    - name: "should read from a file argument"
+      args: ["input.log"]
+      files:
+        "input.log": "path in file is src/index.ts"
+      expected_stdout: |
+        [
+          "src/index.ts"
+        ]
+
+    - name: "should output yaml with --format yaml"
+      args: ["--format", "yaml"]
+      stdin: "src/app.js and src/style.css"
+      expected_stdout: |
+        - src/app.js
+        - src/style.css
+
+    - name: "should output a list with --format list"
+      args: ["--format", "list"]
+      stdin: "src/app.js and src/style.css"
+      expected_stdout: |
+        src/app.js
+        src/style.css
+
+    - name: "should verify existing files with --verify"
+      args: ["--verify", "--format", "list"]
+      stdin: "good: file1.txt, bad: missing.txt"
+      files:
+        "file1.txt": "content"
+      expected_stdout: "file1.txt"
+
+    - name: "should make paths absolute with --absolute"
+      args: ["--absolute", "--format", "list"]
+      stdin: "relative/path.js"
+      expected_stdout: "{{CWD}}/relative/path.js"
+
+    - name: "should use specified --cwd for absolute paths"
+      args: ["--absolute", "--format", "list", "--cwd", "{{CWD}}/fake-root"]
+      stdin: "relative/path.js"
+      files: # create the fake root so it's a valid directory
+        "fake-root/placeholder.txt": ""
+      expected_stdout: "{{CWD}}/fake-root/relative/path.js"
+
+    - name: "should work with --copy flag (output is unchanged)"
+      args: ["--copy", "--format", "list"]
+      stdin: "src/main.ts"
+      expected_stdout: "src/main.ts"
+
+    - name: "should handle a combination of flags"
+      args: ["data.log", "--verify", "--absolute", "--format", "yaml"]
+      stdin: "" # Reading from file
+      files:
+        "data.log": "valid: existing.js, invalid: missing.js"
+        "existing.js": "export {}"
+      expected_stdout: "- {{CWD}}/existing.js"
+
+    - name: "should report error and exit 1 if input file does not exist"
+      args: ["nonexistent.log"]
+      expected_stderr_contains: "Error:"
+      exit_code: 1
+
+    - name: "should produce empty output for no matches"
+      args: ["--format", "list"]
+      stdin: "no paths here"
+      expected_stdout: ""
+approved: true
+linesAdded: null
+linesRemoved: null
+linesDifference: null
+gitCommittedAt: null
+status: committed
+id: 15
