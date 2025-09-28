@@ -1,0 +1,165 @@
+uuid: 44026bb4-5b4d-450f-a3ac-6c478a8ed599
+projectId: pathfish
+createdAt: '2025-09-28T12:35:19.959Z'
+gitCommitMsg: >-
+  feat(core): implement path extraction and verification logic
+
+  - Implement `extractPaths` using a robust regex to find file paths (Unix,
+  Windows, relative, absolute). - Use a higher-order function
+  `createPathExtractionPipeline` to build a clean, multi-step process for
+  cleaning, uniquing, and resolving paths. - Implement `async verifyPaths` to
+  efficiently check for file existence using `Bun.file().exists()` and
+  `Promise.all`. - Export `Options` type for clear API contract.
+promptSummary: >-
+  Implement the core logic for pathfish, using a robust regex and a functional,
+  HOF-based pipeline for extracting and verifying file paths.
+reasoning:
+  - >-
+    Of course. I will now implement the core logic for `pathfish`, focusing on a
+    robust, multi-pass approach to path extraction as you've requested, and
+    ensuring the code follows a functional, high-order function (HOF) style.
+  - '### Step-by-step Reasoning'
+  - >-
+    1.  **File Creation**: I'll start by populating `src/core.ts`, which will
+    house the main logic.
+  - '2.  **`extractPaths` Implementation**:'
+  - >-
+    *   I'll define a robust regular expression (`PATH_REGEX`) that serves as
+    the primary mechanism for finding path-like strings. This regex is designed
+    to identify Unix, Windows, absolute, and relative paths that contain a file
+    extension, which is a strong signal to differentiate them from other text.
+    It will also capture optional trailing line and column numbers (e.g.,
+    `file.ts:10:5`).
+  - >-
+    *   To satisfy the request for a "HOF-style" implementation, I'm creating a
+    `createPathExtractionPipeline` higher-order function. This function takes
+    the user options and returns another function that performs the multi-step
+    extraction process on the input text.
+  - '*   The pipeline will be composed of clear, distinct steps:'
+  - 1.  Execute the regex to find all raw matches.
+  - 2.  Clean each match by stripping the line/column numbers.
+  - 3.  Apply uniqueness filtering using a `Set`.
+  - >-
+    4.  Resolve paths to absolute form if requested, using Node.js's `path`
+    module.
+  - '3.  **`verifyPaths` Implementation**:'
+  - >-
+    *   This `async` function will take an array of paths and filter it down to
+    only those that exist on the filesystem.
+  - >-
+    *   It will leverage `Promise.all` and `Bun.file(path).exists()` to perform
+    these checks concurrently for maximum performance, which is a key benefit of
+    the Bun runtime.
+  - >-
+    *   The implementation uses `map` to create the promises and `filter` to
+    return the final list, adhering to the functional style.
+  - >-
+    This approach ensures the core logic is powerful, configurable, and easy to
+    understand and test due to its modular, functional design.
+operations:
+  - type: write
+    path: src/core.ts
+    content: >-
+      import path from 'node:path';
+
+
+      /**
+       * Options for path extraction.
+       */
+      export type Options = {
+        /**
+         * Convert all found paths to absolute paths.
+         * @default false
+         */
+        absolute?: boolean;
+        /**
+         * The base directory for resolving relative paths.
+         * @default process.cwd()
+         */
+        cwd?: string;
+        /**
+         * Ensure the returned list contains only unique paths.
+         * @default true
+         */
+        unique?: boolean;
+      };
+
+
+      // This regex finds file paths, including optional line/column numbers.
+
+      // It supports Windows, Unix, absolute, and relative paths.
+
+      // It's designed to find paths with extensions in a larger body of text.
+
+      const PATH_REGEX =
+      /(?:(?:[a-zA-Z]:[\\\/]|\.{1,2}[\\\/]|\/))?(?:[\w.-]+[\\\/])*(?:[\w.-]+\.\w+)(?::\d+)?(?::\d+)?/g;
+
+
+      /**
+       * A higher-order function that creates a path extraction pipeline.
+       * This functional approach makes the process clear, configurable, and extensible.
+       * @param opts Configuration options for the pipeline.
+       * @returns A function that takes text and returns an array of paths.
+       */
+      const createPathExtractionPipeline = (opts: Options = {}) => {
+        const { absolute = false, cwd = process.cwd(), unique = true } = opts;
+
+        return (text: string): string[] => {
+          // 1. Find all potential paths using the regex.
+          const matches = Array.from(text.matchAll(PATH_REGEX), m => m[0]);
+
+          // 2. Clean up the matches by removing trailing line/column numbers.
+          const cleanedPaths = matches.map(p => p.replace(/(?::\d+)+$/, ''));
+
+          // 3. (Optional) Filter for unique paths.
+          const uniquePaths = unique ? Array.from(new Set(cleanedPaths)) : cleanedPaths;
+
+          // 4. (Optional) Resolve paths to be absolute.
+          const resolvedPaths = absolute
+            ? uniquePaths.map(p => path.resolve(cwd, p))
+            : uniquePaths;
+
+          return resolvedPaths;
+        };
+      };
+
+
+      /**
+       * Extracts potential file paths from a blob of text using a configurable pipeline.
+       * @param text The text to search within.
+       * @param opts Configuration options for extraction.
+       * @returns An array of found file paths.
+       */
+      export function extractPaths(text: string, opts: Options = {}): string[] {
+        const extractor = createPathExtractionPipeline(opts);
+        return extractor(text);
+      }
+
+
+      /**
+       * Filters a list of paths, keeping only the ones that exist on disk.
+       * @param paths An array of file paths to check.
+       * @returns A promise that resolves to an array of existing file paths.
+       */
+      export async function verifyPaths(paths: string[]): Promise<string[]> {
+        // Concurrently check for the existence of each file.
+        const existenceChecks = await Promise.all(
+          paths.map(p => Bun.file(p).exists()),
+        );
+
+        // Filter the original paths array based on the results of the existence checks.
+        const existingPaths = paths.filter((_, i) => existenceChecks[i]);
+
+        return existingPaths;
+      }
+    patchStrategy: replace
+snapshot:
+  src/core.ts: |
+    // todo
+approved: true
+linesAdded: null
+linesRemoved: null
+linesDifference: null
+gitCommittedAt: null
+status: committed
+id: 2

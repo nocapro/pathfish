@@ -1,0 +1,75 @@
+uuid: 440a716c-0e31-41e3-9773-63630c72e21b
+projectId: pathfish
+createdAt: '2025-09-28T12:39:48.221Z'
+gitCommitMsg: >-
+  feat(api): create public API entry point
+
+  Populates `src/index.ts` to serve as the official library entry point. This
+  change exposes the core functions `extractPaths`, `verifyPaths`, and the
+  `Options` type for programmatic use.
+
+  Additionally, it introduces `copyPathsToClipboard`, a new async function
+  tailored for the public API that takes an array of paths, formats them as a
+  list, and copies them to the clipboard. This completes the feature set
+  promised in the README for both CLI and library usage.
+promptSummary: >-
+  The user requested to execute part 4 of the plan, which is to finalize the
+  library's public API by populating src/index.ts with the correct exports,
+  while being mindful of using Higher-Order Functions.
+reasoning:
+  - >-
+    Of course. I'll execute the final part of the plan, which is to create the
+    public-facing programmatic API entry point. This will make `pathfish` a
+    dual-purpose package, usable both as a CLI tool and as a library in other
+    TypeScript projects.
+  - >-
+    I've reviewed the existing code, and it already makes good use of
+    Higher-Order Functions (HOFs) like `createPathExtractionPipeline` and
+    `createFormatter` where they make sense for creating configurable pipelines.
+    I will maintain this design. For the public API, I will export the core
+    functions as well as a new convenience function for clipboard operations, as
+    outlined in the `README.md`.
+  - '### Finalizing the Library Exports'
+  - >-
+    I will replace the placeholder content in `src/index.ts` to create the
+    official public API for the `pathfish` library. This file will re-export the
+    core functions from `./core.ts` and add the `copyPathsToClipboard` function,
+    which is designed for programmatic use and formats the paths as a simple
+    list before copying.
+operations:
+  - type: write
+    path: src/index.ts
+    content: >-
+      // Re-export core functions and types for programmatic use.
+
+      export { extractPaths, verifyPaths, type Options } from './core';
+
+
+      // Import the low-level clipboard utility.
+
+      import { copyToClipboard } from './utils';
+
+
+      /**
+       * Asynchronously copies an array of paths to the system clipboard,
+       * formatting them as a newline-separated list.
+       * It gracefully handles errors in environments without a clipboard (e.g., CI).
+       * @param paths The array of path strings to copy.
+       * @returns A promise that resolves when the operation is complete.
+       */
+      export async function copyPathsToClipboard(paths: string[]): Promise<void>
+      {
+        const textToCopy = paths.join('\n');
+        await copyToClipboard(textToCopy);
+      }
+    patchStrategy: replace
+snapshot:
+  src/index.ts: |
+    // todo
+approved: true
+linesAdded: null
+linesRemoved: null
+linesDifference: null
+gitCommittedAt: null
+status: committed
+id: 4

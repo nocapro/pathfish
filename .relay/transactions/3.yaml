@@ -1,0 +1,281 @@
+uuid: 42dd5a6e-44ef-4a6c-b9b5-7764f693240e
+projectId: pathfish
+createdAt: '2025-09-28T12:37:52.095Z'
+gitCommitMsg: >-
+  feat(cli): implement full-featured CLI and output utils
+
+  Implements the command-line interface for pathfish, handling argument parsing,
+  stdin/file input, and orchestrating the core path extraction logic.
+
+  - Adds `src/cli.ts` as the main executable entry point. - Implements argument
+  parsing using `mri` for all documented flags (`--format`, `--verify`,
+  `--copy`, etc.). - Adds `src/utils.ts` to handle output formatting (JSON,
+  YAML, list) and clipboard operations. - The CLI is architected using a
+  functional pipeline (`createCliPipeline`) for clarity and testability. - Adds
+  error handling for clipboard failures and other runtime issues.
+promptSummary: >-
+  Implement Part 3 of the plan to build out the CLI and utility functions for
+  pathfish, using a functional, HOF-based approach.
+reasoning:
+  - >-
+    Excellent, with the core logic in place, it's time to build the user-facing
+    part of `pathfish`. I will implement the CLI runner and the utility
+    functions for formatting and clipboard access.
+  - >-
+    To honor your request, I'll structure the code in a functional style, using
+    higher-order functions to create a clear, configurable pipeline for
+    processing the text. This will make the CLI logic clean, testable, and easy
+    to follow.
+  - '### Step 1: Add Version to `package.json`'
+  - >-
+    First, I'll add a `version` field to `package.json`. This is essential for
+    the `--version` flag in the CLI.
+  - '### Step 2: Implement Utilities'
+  - >-
+    Next, I'll create `src/utils.ts` to house the output formatters and the
+    clipboard copy function. I'll use a higher-order function,
+    `createFormatter`, to generate the specific formatting function based on
+    user input.
+  - '### Step 3: Implement the CLI Runner'
+  - >-
+    Finally, I'll build the main CLI entry point in `src/cli.ts`. This file will
+    parse command-line arguments, read from a file or stdin, and execute the
+    processing pipeline built from our core logic and utility functions. The
+    `createCliPipeline` function encapsulates the core workflow, making the main
+    `run` function clean and focused on I/O.
+operations:
+  - type: write
+    path: package.json
+    content: |
+      <<<<<<< SEARCH
+      {
+        "name": "pathfish",
+        "module": "src/index.ts",
+      =======
+      {
+        "name": "pathfish",
+        "version": "0.1.0",
+        "module": "src/index.ts",
+      >>>>>>> REPLACE
+    patchStrategy: search-replace
+  - type: write
+    path: src/utils.ts
+    content: |-
+      import yaml from 'js-yaml';
+      import clipboardy from 'clipboardy';
+
+      export type Format = 'json' | 'yaml' | 'list';
+
+      /**
+       * A higher-order function that returns a formatting function based on the desired format.
+       * This keeps the formatting logic separate and easy to test.
+       * @param format The output format.
+       * @param pretty Whether to pretty-print (for JSON).
+       * @returns A function that takes an array of strings and returns a formatted string.
+       */
+      export const createFormatter = (format: Format, pretty: boolean) => {
+        return (paths: string[]): string => {
+          switch (format) {
+            case 'json':
+              return JSON.stringify(paths, null, pretty ? 2 : undefined);
+            case 'yaml':
+              return yaml.dump(paths);
+            case 'list':
+              return paths.join('\n');
+            default:
+              // This case should be unreachable if argument parsing is correct.
+              throw new Error(`Unknown format: ${format}`);
+          }
+        };
+      };
+
+      /**
+       * Asynchronously copies a given string to the system clipboard.
+       * It gracefully handles errors in environments without a clipboard (e.g., CI).
+       * @param text The text to copy.
+       * @returns A promise that resolves when the operation is complete.
+       */
+      export async function copyToClipboard(text: string): Promise<void> {
+        try {
+          await clipboardy.write(text);
+        } catch (error) {
+          // Suppress errors in environments without a clipboard. Copying is a
+          // "nice-to-have" side effect, not a critical function.
+        }
+      }
+    patchStrategy: replace
+  - type: write
+    path: src/cli.ts
+    content: >-
+      #!/usr/bin/env bun
+
+
+      import mri from 'mri';
+
+      import { extractPaths, verifyPaths, type Options } from './core';
+
+      import { createFormatter, copyToClipboard, type Format } from './utils';
+
+      import { version } from '../package.json' with { type: 'json' };
+
+
+      const HELP_TEXT = `
+
+      pathfish v${version}
+
+      Fuzzy-extract file paths from any blob of text.
+
+
+      Usage:
+        pathfish [file] [options]
+        cat [file] | pathfish [options]
+
+      Options:
+        --format <format>  Output format: json, yaml, list (default: json)
+        --pretty           Pretty-print JSON output (default: true)
+        --absolute         Convert all paths to absolute
+        --cwd <dir>        Base directory for resolving paths (default: process.cwd())
+        --verify           Filter out paths that do not exist on disk
+        --copy             Copy the final output to the clipboard
+        --help, -h         Show this help message
+        --version, -v      Show version number
+      `;
+
+
+      type CliArgs = {
+        _: string[];
+        help?: boolean;
+        version?: boolean;
+        pretty?: boolean;
+        absolute?: boolean;
+        verify?: boolean;
+        copy?: boolean;
+        format?: string;
+        cwd?: string;
+      };
+
+
+      /**
+       * Creates a pipeline of operations to be performed on the input text.
+       * This functional approach makes the process clear and configurable.
+       * @param args Parsed CLI arguments.
+       * @returns An async function that executes the full path extraction and formatting pipeline.
+       */
+      const createCliPipeline = (args: CliArgs) => async (inputText: string) =>
+      {
+        const options: Options = {
+          absolute: args.absolute,
+          cwd: args.cwd || process.cwd(),
+          unique: true, // Unique is always true for CLI
+        };
+
+        // 1. A function to extract paths from text using the specified options.
+        const extract = (text: string) => extractPaths(text, options);
+
+        // 2. An async function to optionally verify the extracted paths.
+        const verify = async (paths: string[]) =>
+          args.verify ? verifyPaths(paths) : paths;
+
+        // 3. A function to format the paths into the desired output string.
+        const format = createFormatter(args.format as Format, args.pretty ?? true);
+
+        // 4. An async function to optionally copy the formatted string to the clipboard.
+        const copy = async (formattedText: string) => {
+          if (args.copy) {
+            await copyToClipboard(formattedText);
+          }
+          return formattedText;
+        };
+
+        // Execute the pipeline by composing the functions.
+        const initialPaths = extract(inputText);
+        const verifiedPaths = await verify(initialPaths);
+        const formattedOutput = format(verifiedPaths);
+        const finalOutput = await copy(formattedOutput);
+
+        return finalOutput;
+      };
+
+
+      /**
+       * Main CLI entry point.
+       * This function orchestrates the entire process from argument parsing to final output.
+       */
+      async function run() {
+        const args: CliArgs = mri(process.argv.slice(2), {
+          boolean: ['help', 'version', 'pretty', 'absolute', 'verify', 'copy'],
+          string: ['format', 'cwd'],
+          alias: { h: 'help', v: 'version' },
+          default: {
+            pretty: true,
+            format: 'json',
+          },
+        });
+
+        if (args.help) {
+          console.log(HELP_TEXT);
+          return;
+        }
+
+        if (args.version) {
+          console.log(`v${version}`);
+          return;
+        }
+
+        const inputFile = args._[0];
+        const inputText = inputFile
+          ? await Bun.file(inputFile).text()
+          : await Bun.stdin.text();
+
+        const pipeline = createCliPipeline(args);
+        const result = await pipeline(inputText);
+
+        console.log(result);
+      }
+
+
+      run().catch(err => {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+        // Use console.error to write to stderr
+        console.error(`\x1b[31mError: ${errorMessage}\x1b[0m`);
+        process.exit(1);
+      });
+    patchStrategy: replace
+snapshot:
+  package.json: |
+    {
+      "name": "pathfish",
+      "module": "src/index.ts",
+      "type": "module",
+      "private": true,
+      "bin": {
+        "pathfish": "src/cli.ts"
+      },
+      "files": [
+        "src"
+      ],
+      "dependencies": {
+        "clipboardy": "^4.0.0",
+        "js-yaml": "^4.1.0",
+        "mri": "^1.2.0"
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@types/js-yaml": "^4.0.9",
+        "@types/mri": "^1.1.5"
+      },
+      "peerDependencies": {
+        "typescript": "^5"
+      }
+    }
+  src/utils.ts: |
+    // todo
+  src/cli.ts: |
+    // todo
+approved: true
+linesAdded: null
+linesRemoved: null
+linesDifference: null
+gitCommittedAt: null
+status: committed
+id: 3

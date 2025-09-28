@@ -6,8 +6,8 @@
   "output": {
     "filePath": "docs/repomix.md",
     "style": "markdown",
-    "parsableStyle": false,
-    "fileSummary": true,
+    "parsableStyle": true,
+    "fileSummary": false,
     "directoryStructure": true,
     "files": true,
     "removeComments": false,
@@ -15,14 +15,14 @@
     "compress": false,
     "topFilesLength": 5,
     "showLineNumbers": false,
-    "copyToClipboard": false,
+    "copyToClipboard": true,
     "git": {
       "sortByChanges": true,
       "sortByChangesMaxCommits": 100,
       "includeDiffs": false
     }
   },
-  "include": ["package.json", "README.md", "index.ts", "tsconfig.json"],
+  "include": ["package.json", "README.md", "src", "index.ts", "tsconfig.json"],
   "ignore": {
     "useGitignore": true,
     "useDefaultPatterns": true,
