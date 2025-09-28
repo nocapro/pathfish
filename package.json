@@ -1,13 +1,14 @@
 {
   "name": "pathfish",
   "version": "0.1.4",
-  "module": "src/index.ts",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
   "type": "module",
   "bin": {
-    "pathfish": "src/cli.ts"
+    "pathfish": "dist/cli.js"
   },
   "files": [
-    "src"
+    "dist"
   ],
   "dependencies": {
     "clipboardy": "^4.0.0",
