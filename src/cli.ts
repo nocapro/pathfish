@@ -8,7 +8,22 @@ import { copyToClipboard, type Format } from './utils';
 import { readFileSync } from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const { version } = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
+let version = '0.1.3';
+
+try {
+  // Try to read from package.json in the same directory (for published packages)
+  const { version: pkgVersion } = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
+  version = pkgVersion;
+} catch {
+  try {
+    // Fallback to parent directory (for development)
+    const { version: pkgVersion } = JSON.parse(readFileSync(path.join(__dirname, '../package.json'), 'utf-8'));
+    version = pkgVersion;
+  } catch {
+    // Ultimate fallback
+    version = '0.1.3';
+  }
+}
 
 const HELP_TEXT = `
 pathfish v${version}
