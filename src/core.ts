@@ -55,6 +55,9 @@ const PATH_REGEX = new RegExp(
     // Quoted paths with spaces (must come first to allow spaces)
     /(?:"[^"]*[\\\/][^"]*"|'[^']*[\\\/][^']*')/.source,
 
+    // Parenthesized paths with spaces: (src/components/Button (new).tsx)
+    /\([^,)]*[\\\/][^,)]*\([^)]*\)[^,)]*\.[a-zA-Z0-9]+\)/.source,
+
     // Windows UNC paths: \\server\share\file (must come before absolute)
     /[\\\/]{2}[^\s\n]+[\\\/][^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
 
@@ -67,11 +70,10 @@ const PATH_REGEX = new RegExp(
     // Relative paths with separators: ./file, ../file, src/file
     /(?:\.[\\/]|[^\s\n]+[\\/])[^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
 
-    // Standalone filenames with extensions: file.txt, README.md.
-    // It avoids matching email domains and parts of URLs by using a negative
-    // lookbehind for '@', 'http://', 'https://', and '//'. It also prevents slashes in the filename
-    // part to avoid overlapping with the relative path regex.
-    /(?<!@|https?:\/\/|\/\/)\b[^\s\n\\/]+\.[a-zA-Z0-9]+\b/.source,
+    // Standalone filenames with extensions: file.txt, README.md, my.component.test.js.
+    // Use negative lookbehind to avoid email domains and URL contexts
+    // Supports multi-dot filenames like my.component.test.js
+    /(?<!@|https?:\/\/[^\s]*)\b[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,}\b(?!\s*@)/.source,
 
     // Common filenames without extensions
     /\b(?:Dockerfile|Makefile|Jenkinsfile|Vagrantfile)\b/.source,
@@ -102,9 +104,12 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
       // Remove query strings and fragments
       path = path.replace(/[?#].*$/, '');
 
-      // Special handling for quoted paths with parentheses
+      // Special handling for quoted paths and parentheses
       if ((path.startsWith('"') && path.endsWith('"')) ||
           (path.startsWith("'") && path.endsWith("'"))) {
+        path = path.slice(1, -1);
+      } else if (path.startsWith('(') && path.endsWith(')')) {
+        // Remove outer parentheses from parenthesized paths
         path = path.slice(1, -1);
       } else {
         // For non-quoted paths, be more careful about punctuation
@@ -117,9 +122,18 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
         path = path.replace(/\\\\/g, '\\');
       }
 
-      // Normalize UNC paths to single slash if they appear in URLs
+      // Handle UNC paths intelligently - preserve file shares, normalize URL paths
       if (path.startsWith('//') && !path.startsWith('\\\\')) {
-        path = path.substring(1);
+        // If it has a file extension, it's likely a file path that should be normalized
+        // If it doesn't have an extension and has only 2 segments, it's likely a UNC share
+        const hasExtension = /\.[a-zA-Z0-9]{1,5}$/.test(path);
+        const segments = path.split('/').filter(s => s.length > 0);
+        
+        if (hasExtension || segments.length > 2) {
+          // This looks like a file path, convert //server/file.txt to /server/file.txt
+          path = path.substring(1);
+        }
+        // Otherwise keep as UNC share like //server/share
       }
 
       // Remove URL scheme and domain if present
@@ -144,15 +158,49 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
     const urlDomainPattern = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/; // Only filter pure domains, not paths
 
   const validPaths = filteredPaths.filter(p => {
-      // Check if this is actually a filename with extension vs a pure domain
-      const isFilenameWithExtension = /[a-zA-Z0-9]-[a-zA-Z0-9.]*\.[a-zA-Z0-9]+/.test(p) ||
-                                     /\.[a-zA-Z0-9]{2,}$/.test(p) && !/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(p.replace(/\.[a-zA-Z0-9]+$/, ''));
+      // Filter out multi-line strings and very long strings
+      if (p.includes('\n') || p.length > 200) {
+        return false;
+      }
+      
+      // Filter out function calls and method names specifically
+      if (p.includes('.') && !p.includes('/') && !p.includes('\\')) {
+        // This could be a function call like 'initActions.setAnalysisResults'
+        // But keep actual filenames like 'file.txt'
+        const parts = p.split('.');
+        if (parts.length > 1) {
+          const lastPart = parts[parts.length - 1];
+          // If the last part doesn't look like a file extension, it's probably a function call
+          if (!/^[a-zA-Z0-9]{1,5}$/.test(lastPart) || 
+              ['setAnalysisResults', 'updateGitignore'].includes(lastPart)) {
+            return false;
+          }
+        }
+      }
+      
+      // Filter out strings that are clearly import/require statements or quoted non-paths
+      if (p.startsWith('"') && p.endsWith('"')) {
+        const content = p.slice(1, -1);
+        // Keep paths with slashes, filter out module names
+        if (!content.includes('/') && !content.includes('\\')) {
+          return false;
+        }
+      }
+      
+      // Filter out relative import paths that don't end with file extensions
+      // But only if they're simple module imports (not deep paths)
+      if ((p.startsWith('./') || p.startsWith('../')) && !p.includes(' ')) {
+        const segments = p.split('/').filter(s => s.length > 0);
+        // Only filter simple relative imports like '../constants', not deep paths like '../../../../../etc/passwd'
+        if (segments.length <= 2 && !/\.[a-zA-Z0-9]{1,5}$/.test(p)) {
+          return false;
+        }
+      }
 
       return !versionPattern.test(p) &&
              !uuidPattern.test(p) &&
              !hashPattern.test(p) &&
              !emailPattern.test(p) &&
-             (!urlDomainPattern.test(p) || isFilenameWithExtension) &&
              p.trim() !== '';
     });
 
