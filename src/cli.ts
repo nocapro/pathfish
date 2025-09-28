@@ -8,7 +8,7 @@ import { copyToClipboard, type Format } from './utils';
 import { readFileSync } from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-let version = '0.1.5';
+let version = '0.1.6';
 
 try {
   // Try to read from package.json in the same directory (for published packages)
@@ -21,7 +21,7 @@ try {
     version = pkgVersion;
   } catch {
     // Ultimate fallback
-    version = '0.1.5';
+    version = '0.1.6';
   }
 }
 
