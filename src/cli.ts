@@ -1,13 +1,14 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 import mri from 'mri';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runPipeline, type PipelineOptions } from './engine';
 import { copyToClipboard, type Format } from './utils';
+import { readFileSync } from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const { version } = await Bun.file(path.join(__dirname, '../package.json')).json();
+const { version } = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
 
 const HELP_TEXT = `
 pathfish v${version}
@@ -71,8 +72,13 @@ async function run() {
 
   try {
     inputText = inputFile
-      ? await Bun.file(path.resolve(args.cwd || process.cwd(), inputFile)).text()
-      : await Bun.stdin.text();
+      ? readFileSync(path.resolve(args.cwd || process.cwd(), inputFile), 'utf-8')
+      : await new Promise((resolve, reject) => {
+          let data = '';
+          process.stdin.on('data', chunk => data += chunk);
+          process.stdin.on('end', () => resolve(data));
+          process.stdin.on('error', reject);
+        });
   } catch (err) {
     throw err;
   }

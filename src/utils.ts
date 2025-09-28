@@ -36,7 +36,7 @@ export const createFormatter = (format: Format, pretty: boolean) => {
 export async function copyToClipboard(text: string): Promise<void> {
   try {
     await clipboardy.write(text);
-  } catch (error) {
+  } catch {
     // Suppress errors in environments without a clipboard. Copying is a
     // "nice-to-have" side effect, not a critical function.
   }

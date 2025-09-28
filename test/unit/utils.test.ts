@@ -18,7 +18,7 @@ type FormatterFixture = (
 describe('createFormatter', async () => {
   it('should throw an error for an unknown format', () => {
     // This is a type-level check, but we test the runtime guard
-    const badFormat = 'xml' as any;
+    const badFormat = 'xml' as unknown as Format;
     expect(() => createFormatter(badFormat, true)).toThrow(
       'Unknown format: xml',
     );

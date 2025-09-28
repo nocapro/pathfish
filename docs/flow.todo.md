@@ -1,8 +1,10 @@
-===
+=== DONE
 
-1. prepare for npm publishing. implement eslint and tsup.
-2. make sure dist content is correct with all files and directories and d.ts files
-3. publish to npm
+1. prepare for npm publishing. implement eslint and tsup. make sure no eslint problems
+2. make sure no bun test fail
+3. make sure dist content is correct with all files and directories and d.ts files
+4. publish to npm
+5. install published version to local globally then test feature
 
 === DONE
 

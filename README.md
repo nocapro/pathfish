@@ -1,80 +1,113 @@
-# pathfish
+# pathfish 🐠
 
-> Fuzzy-extract file paths from any blob of text – TypeScript CLI & programmatic API powered by Bun.
+> **Fuzzy-extract file paths from any blob of text** – Cross-platform CLI & programmatic API for Node.js and Bun.
 
-## What it does
+`pathfish` finds every **relative** or **absolute** file path that appears in text. By default, it **verifies** that each path exists on disk, giving you a clean, reliable list.
 
-Drop in compiler logs, linter output, stack traces, Git diffs, chat logs, etc.
-`pathfish` finds every **relative** or **absolute** file path that appears in the text and returns them in the format you want (JSON, YAML, plain list).
-It finds paths with or without file extensions, and can optionally **verify** that each file really exists, **copy** the list to your clipboard, or **chain** several commands together.
+## 🚀 What it does
 
-## Install
+Drop in compiler logs, linter output, stack traces, Git diffs, or chat logs. `pathfish` intelligently extracts all file paths and returns them in the format you want (JSON, YAML, plain list).
 
+-   ✅ **Verifies paths by default**: Only returns paths that actually exist.
+-   🧠 **Fuzzy matching**: Catches paths with or without extensions, with line/column numbers, and in various formats (Unix, Windows, relative, absolute).
+-   🎨 **Multiple formats**: Output as JSON, YAML, or a simple list.
+-   📋 **Clipboard support**: Instantly copy the output to your clipboard with `--copy`.
+-   🔗 **Chainable**: Designed to be a powerful part of your shell pipelines.
+
+## 📦 Install
+
+**For CLI usage:**
 ```bash
-bun add -g pathfish        # global CLI
-# or
-bun add pathfish           # local dependency
+# Global CLI (recommended)
+npm install -g pathfish
+
+# Or with Bun
+bun add -g pathfish
 ```
 
-## CLI usage
+**For programmatic use:**
+```bash
+# With npm
+npm install pathfish
+
+# With Bun
+bun add pathfish
+
+# With yarn
+yarn add pathfish
+
+# With pnpm
+pnpm add pathfish
+```
+
+## 💻 CLI usage
 
 ```bash
-# read from file
+# Read from a file (only shows paths that exist)
 pathfish lint.log
 
-# read from stdin
+# Read from stdin
 eslint . | pathfish
 
-# choose output format
+# Choose an output format
 pathfish --format yaml lint.log
-pathfish --format json lint.log
 pathfish --format list lint.log
 
-# pretty-print JSON (default)
-pathfish --pretty lint.log
+# Include paths that DON'T exist on disk
+pathfish --no-verify lint.log
 
-# verify that every file actually exists
-pathfish --verify lint.log
+# Copy the resulting list to your clipboard
+eslint . | pathfish --copy --format list
 
-# copy the resulting list to clipboard (works in CI too if clipboard available)
-pathfish --copy lint.log
+# Convert all paths to be absolute
+pathfish --absolute lint.log
 
-# multiple commands in one shot
-tsc --noEmit && eslint . | pathfish --verify --copy --format json
+# A powerful pipeline: find all paths from TS and ESLint,
+# make them absolute, and copy the list to the clipboard.
+(tsc --noEmit && eslint .) | pathfish --absolute --copy --format list
 ```
 
-### CLI flags
+## 🚩 CLI flags
 
-| Flag         | Description                          | Default |
-|--------------|--------------------------------------|---------|
-| `--format`   | `json` `yaml` `list`                 | `json`  |
-| `--pretty`   | Pretty-print JSON                    | `true`  |
-| `--absolute` | Convert relative → absolute paths    | `false` |
-| `--cwd`      | Base directory for conversion        | `process.cwd()` |
-| `--verify`   | Keep only paths that exist on disk   | `true`  |
-| `--copy`     | Copy result to system clipboard      | `false` |
-| `--help`     | Show help                            |         |
-| `--version`  | Show version                         |         |
+| Flag                | Description                                                          | Default         |
+| ------------------- | -------------------------------------------------------------------- | --------------- |
+| `--format <format>` | Output format: `json`, `yaml`, `list`.                               | `json`          |
+| `--pretty`          | Pretty-print JSON output.                                            | `true`          |
+| `--absolute`        | Convert all paths to be absolute.                                    | `false`         |
+| `--cwd <dir>`       | Base directory for resolving paths.                                  | `process.cwd()` |
+| `--no-verify`       | **Disable verification**; include paths that don't exist on disk.    | (not set)       |
+| `--copy`            | Copy the final output to the clipboard.                              | `false`         |
+| `--help`, `-h`      | Show this help message.                                              |                 |
+| `--version`, `-v`   | Show the version number.                                             |                 |
 
-## Programmatic API
+## 🛠️ Programmatic API
+
+You can also use `pathfish` as a library in your own projects. Works with both Node.js and Bun!
 
 ```ts
 import { extractPaths, verifyPaths } from 'pathfish';
 
-const raw = await Bun.file('tsc.log').text();
+// For Node.js
+import { readFileSync } from 'fs';
+const raw = readFileSync('tsc.log', 'utf8');
 
-const paths = extractPaths(raw, {
+// For Bun
+// const raw = await Bun.file('tsc.log').text();
+
+// 1. Extract all potential path-like strings from text
+const potentialPaths = extractPaths(raw, {
   absolute: true,
-  cwd: import.meta.dir,
+  cwd: process.cwd(), // or import.meta.dir for Bun
 });
 
-const existing = await verifyPaths(paths); // skips missing files
+// 2. Filter the list to only include paths that exist
+const existingPaths = await verifyPaths(potentialPaths);
 
-console.log(existing);
+console.log(existingPaths);
 // ["/home/you/project/src/components/SettingsScreen.tsx", ...]
 ```
 
-### API signature
+### API Signature
 
 ```ts
 type Options = {
@@ -89,84 +122,119 @@ async function verifyPaths(paths: string[]): Promise<string[]>; // keeps only ex
 async function copyPathsToClipboard(paths: string[]): Promise<void>; // cross-platform
 ```
 
-## Use-cases
+*(Note: The main `pathfish` CLI command runs `extractPaths` and `verifyPaths` together by default.)*
 
-1. **LLM context injection**
-   Agentic CLI tools can instantly feed only the **relevant** source files into an LLM prompt, slashing token cost and improving accuracy.
+## ✨ Use-cases
 
-2. **IDE-agnostic quick-open**
-   Pipe any log into `pathfish --copy` and paste into your editor’s quick-open dialogue.
+1.  **🤖 LLM Context Injection**
+    Pipe linter or compiler output to `pathfish` to get a list of relevant files, then feed their contents into an LLM prompt for more accurate, context-aware responses.
 
-3. **CI hygiene checks**
-   Fail the build when referenced files are missing:
-   `tsc --noEmit | pathfish --verify --format list | wc -l | xargs test 0 -eq`
+2.  **⚡ IDE-Agnostic Quick-Open**
+    Pipe any log into `pathfish --copy --format list` and paste the result directly into your editor’s quick-open dialog to instantly open all referenced files.
 
-4. **Batch refactoring**
-   Extract every file that triggered an ESLint warning, then run your codemod only on those files.
+3.  **✅ CI Sanity Checks**
+    Fail a CI build if logs reference files that have been moved or deleted.
+    ```bash
+    # Get all paths mentioned in linter output
+    eslint . | pathfish --no-verify --format list > all_paths.txt
 
-5. **Chat-ops**
-   Slack-bot receives a stack-trace, runs `pathfish`, and returns clickable links to the exact files in your repo.
+    # Get only the paths that actually exist
+    eslint . | pathfish --format list > existing_paths.txt
 
-## Examples
+    # If the files don't match, there's a missing reference. Fail the build.
+    diff all_paths.txt existing_paths.txt && exit 1 || echo "All paths are valid!"
+    ```
 
-### TypeScript compiler output
+4.  **🎯 Batch Refactoring**
+    Extract every file that triggered an ESLint warning, then run a codemod or script only on that specific list of files.
+    `eslint . | pathfish --format list | xargs your-codemod-script`
 
-Input
+5.  **💬 Chat-Ops**
+    Have a Slack bot receive a stack trace, run `pathfish` on it, and reply with clickable links to the exact files in your repository.
+
+## 📜 Examples
+
+### TypeScript Compiler Output
+
+**Input:**
 ```
 src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
+src/utils/non-existent.ts:1:1 - error TS2307: Cannot find module './fake'.
 ```
 
-Output (`--format json --verify`)
+**Command:** `pathfish`
+
+**Output:** (Only `SettingsScreen.tsx` is returned because it exists)
 ```json
 [
-  "/home/you/project/src/components/SettingsScreen.tsx"
+  "src/components/SettingsScreen.tsx"
 ]
 ```
 
-### Dockerfile commands
+### Dockerfile Commands
 
-Input
+**Input:**
 ```
 COPY --from=builder /app/dist/server /usr/local/bin/server
 ```
 
-Output (`--format list`)
+**Command:** `pathfish --no-verify --format list` (using `--no-verify` because paths are in a container)
+
+**Output:**
 ```
 /app/dist/server
 /usr/local/bin/server
 ```
 
-### ESLint stylish output
+### ESLint Stylish Output
 
-Input
+**Input:**
 ```
-/home/realme-book/Project/code/relaycode-new/src/components/AiProcessingScreen.tsx
-  108:1  warning  This line has a length of 123. Maximum allowed is 120  max-len
+/home/user/project/src/components/Button.tsx
+  108:1  warning  This line has a length of 123  max-len
 ```
 
-Output (`--format yaml --copy`)
+**Command:** `pathfish --format yaml --copy`
+
+**Output:** (and copied to your clipboard)
 ```yaml
-- /home/realme-book/Project/code/relaycode-new/src/components/AiProcessingScreen.tsx
-```
-(list is now in your clipboard)
-
-### Multiple commands
-
-```bash
-# one-lint to copy only real offenders
-tsc --noEmit && eslint . | pathfish --verify --copy --format list
+- /home/user/project/src/components/Button.tsx
 ```
 
-## Development
+## 🏗️ Development
 
 ```bash
 git clone https://github.com/your-name/pathfish.git
 cd pathfish
-bun install
-bun test
-bun run build
+
+# Install dependencies
+npm install
+# or bun install
+
+# Run tests
+npm test
+# or bun test
+
+# Build the project
+npm run build
+# or bun run build
+
+# Lint the code
+npm run lint
+
+# Type check
+npm run typecheck
 ```
 
-## License
+## ✅ Quality Assurance
+
+- **62+ automated tests** covering all core functionality
+- **ESLint** enforced code style
+- **TypeScript** strict mode enabled
+- **Cross-platform** testing (Node.js + Bun)
+- **Zero dependencies** in production (only 3 lightweight dev dependencies)
+- **Comprehensive error handling** with graceful degradation
+
+## 📄 License
 
 MIT

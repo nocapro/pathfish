@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import path from 'node:path';
+// import path from 'node:path';
 import {
   runCli,
   loadYamlFixture,

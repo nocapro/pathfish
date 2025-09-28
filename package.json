@@ -1,6 +1,6 @@
 {
   "name": "pathfish",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "module": "src/index.ts",
   "type": "module",
   "private": true,
@@ -18,10 +18,18 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@types/js-yaml": "^4.0.9",
-    "@types/mri": "^1.1.5"
+    "@types/mri": "^1.1.5",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
+    "eslint": "^9.36.0",
+    "tsup": "^8.5.0"
   },
   "scripts": {
-    "test": "bun test test"
+    "test": "bun test test",
+    "build": "tsup",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
   },
   "peerDependencies": {
     "typescript": "^5"

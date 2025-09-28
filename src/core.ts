@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { promises as fs } from 'node:fs';
 
 /**
  * Options for path extraction.
@@ -171,7 +172,7 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
     const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
     const hashPattern = /^[a-f0-9]{7,40}$/i;
     const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    const urlDomainPattern = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/; // Only filter pure domains, not paths
+    // const urlDomainPattern = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/; // Only filter pure domains, not paths
 
   const validPaths = filteredPaths.filter(p => {
       // Filter out multi-line strings and very long strings
@@ -187,8 +188,8 @@ const createPathExtractionPipeline = (opts: Options = {}) => {
         if (parts.length > 1) {
           const lastPart = parts[parts.length - 1];
           // If the last part doesn't look like a file extension, it's probably a function call
-          if (!/^[a-zA-Z0-9]{1,5}$/.test(lastPart) || 
-              ['setAnalysisResults', 'updateGitignore'].includes(lastPart)) {
+          if (!/^[a-zA-Z0-9]{1,5}$/.test(lastPart || '') ||
+              ['setAnalysisResults', 'updateGitignore'].includes(lastPart || '')) {
             return false;
           }
         }
@@ -244,8 +245,8 @@ function fixSplitPaths(paths: string[]): string[] {
 
     // Check if current path starts with '(' and next path ends with ')'
     if (i < paths.length - 1 &&
-        (current.startsWith('(') || current.endsWith('(')) &&
-        paths[i + 1].match(/\).*\.[a-zA-Z0-9]+$/)) {
+        current && (current.startsWith('(') || current.endsWith('(')) &&
+        paths[i + 1] && paths[i + 1]!.match(/\).*\.[a-zA-Z0-9]+$/)) {
       // Combine the paths and clean up
       let combined = current + ' ' + paths[i + 1];
 
@@ -259,7 +260,7 @@ function fixSplitPaths(paths: string[]): string[] {
       result.push(combined);
       i += 2; // Skip the next path as we've already consumed it
     } else {
-      result.push(current);
+      result.push(current || '');
       i++;
     }
   }
@@ -286,9 +287,14 @@ export function extractPaths(text: string, opts: Options = {}): string[] {
  */
 export async function verifyPaths(paths: string[], cwd: string = process.cwd()): Promise<string[]> {
   // Concurrently check for the existence of each file.
-  const checks = paths.map(p => {
+  const checks = paths.map(async p => {
     const absolutePath = path.isAbsolute(p) ? p : path.resolve(cwd, p);
-    return Bun.file(absolutePath).exists();
+    try {
+      await fs.access(absolutePath);
+      return true;
+    } catch {
+      return false;
+    }
   });
   const existenceChecks = await Promise.all(checks);
 
