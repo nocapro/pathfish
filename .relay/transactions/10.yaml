@@ -1,0 +1,389 @@
+uuid: 13c1214c-83b6-4556-9a5c-5674c3e80d44
+projectId: pathfish
+createdAt: '2025-09-28T13:01:19.564Z'
+gitCommitMsg: >-
+  fix(tests): resolve TS errors by making describe callbacks async
+
+  The TypeScript compiler reported TS1308 errors because `await` for fixture
+  loading was used within synchronous `describe` function callbacks.
+
+  This commit fixes the issue by marking the relevant `describe` callbacks in
+  the e2e, integration, and unit test files as `async`, allowing the use of
+  `await` and enabling the test suite to compile and run correctly.
+promptSummary: >-
+  The user received TypeScript errors because `await` was used inside
+  synchronous `describe` blocks. I'm fixing this by making the callbacks async.
+reasoning:
+  - >-
+    Excellent, the test suite is in place. The TypeScript compiler has correctly
+    identified that `await` is being used inside synchronous function callbacks
+    for `describe`. While `bun test` supports top-level `await`, `describe`'s
+    callback is not the top level of the module, so it needs to be explicitly
+    marked as `async`.
+  - >-
+    This is a straightforward fix. I'll patch the four test files to make the
+    `describe` callbacks asynchronous.
+  - '### Fixing `test/e2e/cli.test.ts`'
+  - >-
+    I'll mark the `describe` callback as `async` so it can `await` the fixture
+    loading.
+  - '### Fixing `test/integration/engine.test.ts`'
+  - >-
+    Similarly, I'll make the `describe` callback here `async` to allow for
+    loading the YAML fixture.
+  - '### Fixing `test/unit/core.test.ts`'
+  - >-
+    The same fix is needed for the nested `describe` block in the core unit
+    tests.
+  - '### Fixing `test/unit/utils.test.ts`'
+  - >-
+    Finally, I'll apply the `async` keyword to the `describe` callback in the
+    utils test file.
+  - >-
+    These changes should resolve all the TypeScript errors, and your test suite
+    should now run correctly.
+operations:
+  - type: write
+    path: test/e2e/cli.test.ts
+    content: |+
+      --- test/e2e/cli.test.ts
+      +++ test/e2e/cli.test.ts
+      @@ -19,7 +19,7 @@
+         exit_code?: number;
+       };
+       
+      -describe('cli.ts (E2E)', () => {
+      +describe('cli.ts (E2E)', async () => {
+         const fixtures = await loadYamlFixture<CliTestCase[]>('./cli.fixtures.yaml');
+       
+         describe('CLI execution', () => {
+
+    patchStrategy: standard-diff
+  - type: write
+    path: test/integration/engine.test.ts
+    content: |+
+      --- test/integration/engine.test.ts
+      +++ test/integration/engine.test.ts
+      @@ -14,7 +14,7 @@
+         expected: string;
+       };
+       
+      -describe('engine.ts (Integration)', () => {
+      +describe('engine.ts (Integration)', async () => {
+         const fixtures = await loadYamlFixture<EngineTestCase[]>(
+           './engine.fixtures.yaml',
+         );
+
+    patchStrategy: standard-diff
+  - type: write
+    path: test/unit/core.test.ts
+    content: |+
+      --- test/unit/core.test.ts
+      +++ test/unit/core.test.ts
+      @@ -15,7 +15,7 @@
+       };
+       
+       describe('core.ts', () => {
+      -  describe('extractPaths', () => {
+      +  describe('extractPaths', async () => {
+           const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>(
+             './core.fixtures.yaml',
+           );
+
+    patchStrategy: standard-diff
+  - type: write
+    path: test/unit/utils.test.ts
+    content: |+
+      --- test/unit/utils.test.ts
+      +++ test/unit/utils.test.ts
+      @@ -15,7 +15,7 @@
+         | { name: string; cases: FormatterTestCase[] }
+       )[];
+       
+      -describe('createFormatter', () => {
+      +describe('createFormatter', async () => {
+         it('should throw an error for an unknown format', () => {
+           // This is a type-level check, but we test the runtime guard
+           const badFormat = 'xml' as any;
+
+    patchStrategy: standard-diff
+snapshot:
+  test/e2e/cli.test.ts: |-
+    import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+    import path from 'node:path';
+    import {
+      runCli,
+      loadYamlFixture,
+      setupTestDirectory,
+      cleanupTestDirectory,
+    } from '../test.utils';
+    import { version } from '../../package.json' with { type: 'json' };
+
+    type CliTestCase = {
+      name: string;
+      args: string[];
+      stdin?: string;
+      files?: { [path: string]: string };
+      expected_stdout?: string;
+      expected_stdout_contains?: string;
+      expected_stderr_contains?: string;
+      exit_code?: number;
+    };
+
+    describe('cli.ts (E2E)', () => {
+      const fixtures = await loadYamlFixture<CliTestCase[]>('./cli.fixtures.yaml');
+
+      describe('CLI execution', () => {
+        let tempDir: string;
+
+        for (const testCase of fixtures) {
+          const {
+            name,
+            args,
+            stdin,
+            files = {},
+            expected_stdout,
+            expected_stdout_contains,
+            expected_stderr_contains,
+            exit_code = 0,
+          } = testCase;
+
+          // Each test case gets its own directory setup
+          beforeEach(async () => {
+            tempDir = await setupTestDirectory(files);
+          });
+
+          afterEach(async () => {
+            await cleanupTestDirectory(tempDir);
+          });
+
+          it(name, async () => {
+            const fileArgNames = Object.keys(files);
+
+            // Resolve file paths and placeholders in args
+            const processedArgs = args.map(arg => {
+              // If the arg is a file that we created for the test, make its path absolute.
+              if (fileArgNames.includes(arg)) {
+                return path.join(tempDir, arg);
+              }
+              // For other args (like --cwd), replace the placeholder.
+              return arg.replaceAll('{{CWD}}', tempDir);
+            });
+
+            const { stdout, stderr, exitCode } = await runCli(
+              processedArgs,
+              stdin,
+            );
+
+            // Assert exit code
+            expect(exitCode).toBe(exit_code);
+
+            // Assert stdout
+            if (expected_stdout !== undefined) {
+              const processed_expected_stdout = expected_stdout
+                .replaceAll('{{CWD}}', tempDir)
+                .trim();
+              expect(stdout.trim()).toEqual(processed_expected_stdout);
+            }
+            if (expected_stdout_contains !== undefined) {
+              const expected_text =
+                expected_stdout_contains === 'v'
+                  ? `v${version}`
+                  : expected_stdout_contains;
+              expect(stdout).toContain(expected_text);
+            }
+
+            // Assert stderr
+            if (expected_stderr_contains !== undefined) {
+              expect(stderr).toContain(expected_stderr_contains);
+            }
+          });
+        }
+      });
+    });
+  test/integration/engine.test.ts: |-
+    import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+    import { runPipeline, type PipelineOptions } from '../../src/engine';
+    import {
+      loadYamlFixture,
+      setupTestDirectory,
+      cleanupTestDirectory,
+    } from '../test.utils';
+
+    type EngineTestCase = {
+      name: string;
+      options: PipelineOptions;
+      input: string;
+      files: { [path: string]: string };
+      expected: string;
+    };
+
+    describe('engine.ts (Integration)', () => {
+      const fixtures = await loadYamlFixture<EngineTestCase[]>(
+        './engine.fixtures.yaml',
+      );
+
+      describe('runPipeline', () => {
+        let tempDir: string;
+
+        for (const { name, options, input, files, expected } of fixtures) {
+          // Each test case gets its own directory setup
+          beforeEach(async () => {
+            tempDir = await setupTestDirectory(files);
+          });
+
+          afterEach(async () => {
+            await cleanupTestDirectory(tempDir);
+          });
+
+          it(name, async () => {
+            // Use the temp directory as the CWD for the pipeline
+            const result = await runPipeline(input, { ...options, cwd: tempDir });
+
+            // Replace placeholder in expected output with the actual temp dir path
+            const expectedWithCwd = expected.replaceAll('{{CWD}}', tempDir).trim();
+
+            expect(result.trim()).toEqual(expectedWithCwd);
+          });
+        }
+      });
+    });
+  test/unit/core.test.ts: |-
+    import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+    import path from 'node:path';
+    import { extractPaths, verifyPaths, type Options } from '../../src/core';
+    import {
+      loadYamlFixture,
+      setupTestDirectory,
+      cleanupTestDirectory,
+    } from '../test.utils';
+
+    type ExtractPathsTestCase = {
+      name: string;
+      options: Options;
+      input: string;
+      expected: string[];
+    };
+
+    describe('core.ts', () => {
+      describe('extractPaths', () => {
+        const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>(
+          './core.fixtures.yaml',
+        );
+
+        for (const { name, options, input, expected } of fixtures) {
+          it(name, () => {
+            const result = extractPaths(input, options);
+            // Sort for stable comparison
+            expect(result.sort()).toEqual(expected.sort());
+          });
+        }
+      });
+
+      describe('verifyPaths', () => {
+        let tempDir: string;
+        const testFiles = {
+          'file1.txt': 'hello',
+          'dir/file2.js': 'content',
+          'dir/subdir/file3.json': '{}',
+        };
+
+        beforeEach(async () => {
+          tempDir = await setupTestDirectory(testFiles);
+        });
+
+        afterEach(async () => {
+          await cleanupTestDirectory(tempDir);
+        });
+
+        it('should return only paths that exist on disk', async () => {
+          const pathsToCheck = [
+            path.join(tempDir, 'file1.txt'), // exists
+            path.join(tempDir, 'dir/file2.js'), // exists
+            path.join(tempDir, 'non-existent.txt'), // does not exist
+            path.join(tempDir, 'dir/subdir/another.json'), // does not exist
+          ];
+
+          const expected = [
+            path.join(tempDir, 'file1.txt'),
+            path.join(tempDir, 'dir/file2.js'),
+          ];
+
+          const result = await verifyPaths(pathsToCheck);
+          expect(result.sort()).toEqual(expected.sort());
+        });
+
+        it('should return an empty array if no paths exist', async () => {
+          const pathsToCheck = [
+            path.join(tempDir, 'foo.txt'),
+            path.join(tempDir, 'bar.js'),
+          ];
+          const result = await verifyPaths(pathsToCheck);
+          expect(result).toEqual([]);
+        });
+
+        it('should return an empty array for empty input', async () => {
+          const result = await verifyPaths([]);
+          expect(result).toEqual([]);
+        });
+      });
+    });
+  test/unit/utils.test.ts: |-
+    import { describe, it, expect } from 'bun:test';
+    import { createFormatter, type Format } from '../../src/utils';
+    import { loadYamlFixture } from '../test.utils';
+
+    type FormatterTestCase = {
+      name: string;
+      format: Format;
+      pretty: boolean;
+      input: string[];
+      expected: string;
+    };
+
+    type FormatterFixture = (
+      | FormatterTestCase
+      | { name: string; cases: FormatterTestCase[] }
+    )[];
+
+    describe('createFormatter', () => {
+      it('should throw an error for an unknown format', () => {
+        // This is a type-level check, but we test the runtime guard
+        const badFormat = 'xml' as any;
+        expect(() => createFormatter(badFormat, true)).toThrow(
+          'Unknown format: xml',
+        );
+      });
+
+      const fixtures = await loadYamlFixture<FormatterFixture>(
+        './utils.fixtures.yaml',
+      );
+
+      for (const fixture of fixtures) {
+        if ('cases' in fixture) {
+          describe(fixture.name, () => {
+            for (const testCase of fixture.cases) {
+              it(`should format as ${testCase.format}`, () => {
+                const format = createFormatter(testCase.format, testCase.pretty);
+                const result = format(testCase.input);
+                expect(result.trim()).toEqual(testCase.expected.trim());
+              });
+            }
+          });
+        } else {
+          it(fixture.name, () => {
+            const format = createFormatter(fixture.format, fixture.pretty);
+            const result = format(fixture.input);
+            // Use trim to handle potential trailing newlines from YAML multiline strings
+            expect(result.trim()).toEqual(fixture.expected.trim());
+          });
+        }
+      }
+    });
+approved: true
+linesAdded: null
+linesRemoved: null
+linesDifference: null
+gitCommittedAt: null
+status: committed
+id: 10

@@ -4,6 +4,10 @@ prepare for npm publishing. implement eslint and tsup.
 
 ===
 
+add more comprehensive test cases and coverage
+
+=== DONE
+
 create comprehensive bun test cases to verify readme.md implementation;
 
 1. no mock, stub or simulation. only real implementation

@@ -1,0 +1,66 @@
+- name: "Basic path extraction"
+  options: {}
+  input: |
+    Here are some files: src/core.ts and ./README.md.
+    Also, a log file /var/log/syslog.
+  expected:
+    - "src/core.ts"
+    - "./README.md"
+    - "/var/log/syslog"
+
+- name: "Windows path extraction"
+  options: {}
+  input: |
+    Error in C:\\Users\\Test\\project\\src\\file.js
+    Check the config at .\\config\\settings.json
+  expected:
+    - "C:\\Users\\Test\\project\\src\\file.js"
+    - ".\\config\\settings.json"
+
+- name: "Path extraction with line and column numbers"
+  options: {}
+  input: |
+    src/components/Button.tsx:5:10 - error
+    dist/bundle.js:1:12345
+    /app/main.py:42
+  expected:
+    - "src/components/Button.tsx"
+    - "dist/bundle.js"
+    - "/app/main.py"
+
+- name: "Standalone filenames with extensions"
+  options: {}
+  input: |
+    The project uses bun.lockb and has a README.md.
+    This is not a path: some.word.
+    But this is: package.json.
+  expected:
+    - "bun.lockb"
+    - "README.md"
+    - "package.json"
+
+- name: "Unique paths option (default)"
+  options: { unique: true }
+  input: "See src/core.ts and again src/core.ts"
+  expected: ["src/core.ts"]
+
+- name: "Non-unique paths option"
+  options: { unique: false }
+  input: "See src/core.ts and again src/core.ts"
+  expected: ["src/core.ts", "src/core.ts"]
+
+- name: "Absolute paths option"
+  options: { absolute: true, cwd: "/home/user/project" }
+  input: |
+    Relative path: src/index.ts
+    Dot-slash path: ./dist/main.js
+    Absolute path is unchanged: /etc/hosts
+  expected:
+    - "/home/user/project/src/index.ts"
+    - "/home/user/project/dist/main.js"
+    - "/etc/hosts"
+
+- name: "Empty input"
+  options: {}
+  input: "No paths here."
+  expected: []

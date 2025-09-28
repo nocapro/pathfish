@@ -1,0 +1,46 @@
+- name: "should format as a JSON array (pretty)"
+  format: "json"
+  pretty: true
+  input: ["src/index.ts", "README.md"]
+  expected: |
+    [
+      "src/index.ts",
+      "README.md"
+    ]
+
+- name: "should format as a JSON array (compact)"
+  format: "json"
+  pretty: false
+  input: ["src/index.ts", "README.md"]
+  expected: '["src/index.ts","README.md"]'
+
+- name: "should format as a YAML list"
+  format: "yaml"
+  pretty: true # pretty is ignored for yaml in current impl
+  input: ["src/index.ts", "README.md"]
+  expected: |
+    - src/index.ts
+    - README.md
+
+- name: "should format as a newline-separated list"
+  format: "list"
+  pretty: true # pretty is ignored for list
+  input: ["src/index.ts", "README.md"]
+  expected: |
+    src/index.ts
+    README.md
+
+- name: "should handle empty input correctly for all formats"
+  cases:
+    - format: "json"
+      pretty: true
+      input: []
+      expected: "[]"
+    - format: "yaml"
+      pretty: true
+      input: []
+      expected: "[]\n" # js-yaml adds a newline for empty array
+    - format: "list"
+      pretty: true
+      input: []
+      expected: ""

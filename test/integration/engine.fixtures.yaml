@@ -1,0 +1,47 @@
+- name: "Basic pipeline: extract and format as pretty JSON"
+  options: { format: 'json', pretty: true }
+  input: "File is src/index.ts and another is ./README.md"
+  files: {}
+  expected: |
+    [
+      "src/index.ts",
+      "README.md"
+    ]
+
+- name: "Pipeline with verification, filtering out non-existent paths"
+  options: { verify: true, format: 'list' }
+  input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
+  files:
+    'file1.txt': 'content'
+    'dir/file2.log': 'log content'
+  expected: |
+    file1.txt
+    dir/file2.log
+
+- name: "Pipeline with absolute path conversion"
+  options: { absolute: true, format: 'json', pretty: false }
+  input: "Relative path: src/main.js and ./index.html"
+  files: {}
+  expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
+
+- name: "Pipeline with verification and absolute path conversion"
+  options: { verify: true, absolute: true, format: 'yaml' }
+  input: "Real: src/app.ts. Fake: src/fake.ts"
+  files:
+    'src/app.ts': 'export default {}'
+  expected: |
+    - {{CWD}}/src/app.ts
+
+- name: "Pipeline with different format (yaml) and no unique"
+  options: { format: 'yaml', unique: false }
+  input: "path: a.txt, again: a.txt"
+  files: {}
+  expected: |
+    - a.txt
+    - a.txt
+
+- name: "Pipeline should produce empty output for no matches"
+  options: { format: 'json' }
+  input: "Just some regular text without any paths."
+  files: {}
+  expected: "[]"

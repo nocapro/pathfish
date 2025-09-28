@@ -22,7 +22,14 @@
       "includeDiffs": false
     }
   },
-  "include": ["package.json", "README.md", "src", "index.ts", "tsconfig.json"],
+  "include": [
+    "package.json",
+    "README.md",
+    "src",
+    "test",
+    "index.ts",
+    "tsconfig.json"
+  ],
   "ignore": {
     "useGitignore": true,
     "useDefaultPatterns": true,
