@@ -96,7 +96,7 @@ async function walk(dir: string): Promise<string[]> {
   let entries: import('node:fs').Dirent[];
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch (err) {
+  } catch {
     // Ignore errors from directories that cannot be read
     return [];
   }
@@ -302,7 +302,7 @@ function fixSplitPaths(paths: string[]): string[] {
     // Check if current path starts with '(' and next path ends with ')'
     if (i < paths.length - 1 &&
         current && (current.startsWith('(') || current.endsWith('(')) &&
-        paths[i + 1] && paths[i + 1]!.match(/\).*\.[a-zA-Z0-9]+$/)) {
+        paths[i + 1] && paths[i + 1]?.match(/\).*\.[a-zA-Z0-9]+$/)) {
       // Combine the paths and clean up
       let combined = current + ' ' + paths[i + 1];
 

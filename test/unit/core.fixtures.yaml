@@ -1,5 +1,5 @@
 - name: "Basic path extraction"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Here are some files: src/core.ts and ./README.md
     Also, a log file /var/log/syslog
@@ -9,7 +9,7 @@
     - "/var/log/syslog"
 
 - name: "Windows path extraction"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Error in C:\\Users\\Test\\project\\src\\file.js
     Check the config at .\\config\\settings.json
@@ -18,7 +18,7 @@
     - ".\\config\\settings.json"
 
 - name: "Path extraction with line and column numbers"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     src/components/Button.tsx:5:10 - error
     dist/bundle.js:1:12345
@@ -28,7 +28,7 @@
     - "/app/main.py"
 
 - name: "Standalone filenames with extensions"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     The project uses bun.lockb and has a README.md.
     But this is: package.json
@@ -37,17 +37,17 @@
     - "package.json"
 
 - name: "Unique paths option (default)"
-  options: { unique: true }
+  options: { unique: true, strategy: 'regex' }
   input: "See src/core.ts and again src/core.ts"
   expected: ["src/core.ts"]
 
 - name: "Non-unique paths option"
-  options: { unique: false }
+  options: { unique: false, strategy: 'regex' }
   input: "See src/core.ts and again src/core.ts"
   expected: ["src/core.ts", "src/core.ts"]
 
 - name: "Absolute paths option"
-  options: { absolute: true, cwd: "/home/user/project" }
+  options: { absolute: true, cwd: "/home/user/project", strategy: 'regex' }
   input: |
     Relative path: src/index.ts
     Dot-slash path: ./dist/main.js
@@ -57,12 +57,12 @@
     - "/etc/hosts"
 
 - name: "Empty input"
-  options: {}
+  options: { strategy: 'regex' }
   input: "No paths here."
   expected: []
 
 - name: "Should ignore common transient/generated directories"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Path in node_modules/package/file.js
     Path in .git/hooks/pre-commit
@@ -73,7 +73,7 @@
     - "distribution/file.js"
 
 - name: "Should ignore common lockfiles"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     This project uses bun.lockb and package-lock.json.
     But this is fine: my-package.json
@@ -81,7 +81,7 @@
     - "my-package.json"
 
 - name: "Paths with special characters and surrounding punctuation"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Paths can be tricky: (src/components/Button (new).tsx),
     <[dist/app-v2.js]>, or even "quoted/path.css".
@@ -92,14 +92,14 @@
     - "file.v2.js"
 
 - name: "Should extract common files without extensions"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Check the Dockerfile and also the Makefile for build instructions."
   expected:
     - "Dockerfile"
     - "Makefile"
 
 - name: "Should avoid matching domains from emails and URLs"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Contact me at user@domain.com.
     Check the website http://example.org/index.html and also https://another.com.
@@ -111,7 +111,7 @@
     - "/server/file.txt"
 
 - name: "Advanced path extraction with complex cases"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Quoted path: "src/app/main.css"
     Path with query string: /assets/style.css?v=1.2
@@ -134,7 +134,7 @@
     - "a/b/c.io"
 
 - name: "Quoted paths with spaces"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Error in "/path with spaces/file.js" and also in 'another path/with spaces.ts'.
   expected:
@@ -142,71 +142,71 @@
     - "another path/with spaces.ts"
 
 - name: "Paths with scoped npm packages"
-  options: {}
+  options: { strategy: 'regex' }
   input: 'Requires "@scoped/package/index.js" and also regular ''package/main.js'''
   expected:
     - "@scoped/package/index.js"
     - "package/main.js"
 
 - name: "Paths with tilde"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Check ~/documents/report.docx."
   expected:
     - "~/documents/report.docx"
 
 - name: "Complex relative paths with parent selectors"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Path is ../../src/app/../core/utils.ts"
   expected:
     - "../../src/app/../core/utils.ts"
 
 - name: "Windows UNC paths"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Data at \\\\network-share\\folder\\data.csv and //another/share"
   expected:
     - "\\\\network-share\\folder\\data.csv"
     - "//another/share"
 
 - name: "Should avoid matching version numbers"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Release v3.4.5 is out. See also file-1.2.3.log"
   expected:
     - "file-1.2.3.log"
 
 - name: "Should avoid matching UUIDs and commit hashes"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Error ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890, commit: f0e9d8c7. see file.log"
   expected:
     - "file.log"
 
 - name: "Paths inside URLs with ports"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Asset is at http://localhost:8080/assets/img/logo.png. And another at just /path/to/file.js"
   expected:
     - "/assets/img/logo.png"
     - "/path/to/file.js"
 
 - name: "Paths with mixed slashes"
-  options: {}
+  options: { strategy: 'regex' }
   input: "A strange path: src/mix\\slash/component.tsx"
   expected:
     - "src/mix\\slash/component.tsx"
 
 - name: "Paths with multiple parent selectors"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Go way up with ../../../../../etc/passwd"
   expected:
     - "../../../../../etc/passwd"
 
 - name: "Paths adjacent to brackets and commas"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Files are [file1.txt], (file2.log), and {path/to/file3.json}."
   expected:
     - "file1.txt"
     - "file2.log"
     - "path/to/file3.json"
 - name: "Should extract paths from TypeScript compiler error output"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
 

@@ -22,7 +22,7 @@ describe('core.ts', () => {
     for (const { name, options, input, files, expected } of fixtures) {
       it(name, async () => {
         let tempDir: string | undefined;
-        let cwd = process.cwd();
+        let cwd = options.cwd || process.cwd();
         if (files && Object.keys(files).length > 0) {
           tempDir = await setupTestDirectory(files);
           cwd = tempDir;
