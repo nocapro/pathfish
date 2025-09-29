@@ -56,6 +56,63 @@ error: "tsc" exited with code 1
 
 ===
 
+current tests is focused on regex, I want when fixtures says using regex and fuzzy the test should run two tests so user can compare different strategy results
+
+ example
+-------------
+
+- name: "Should extract paths from TypeScript compiler error output"
+  options: { strategy: 'regex'  } //basically this should say something like regex and fuzzy. this is different from hybrid strategy
+  input: |
+    src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
+
+    5 import { AI_PROVIDERS, SETTINGS_FOOTER_ACTIONS } from '../constants/settings.constants';
+               ~~~~~~~~~~~~
+
+    src/hooks/useDebugMenu.tsx:101:29 - error TS2554: Expected 4 arguments, but got 3.
+
+    101                 initActions.setAnalysisResults('relaycode-tui', true, false);
+                                    ~~~~~~~~~~~~~~~~~~
+
+      src/stores/init.store.ts:30:99
+        30         setAnalysisResults: (projectId: string, gitignoreFound: boolean, gitInitialized: boolean, configExists: boolean) => void;
+                                                                                                             ~~~~~~~~~~~~~~~~~~~~~
+        An argument for 'configExists' was not provided.
+
+    src/services/copy.service.ts:5:10 - error TS2305: Module '"./fs.service"' has no exported member 'FileSystemService'.
+
+    5 import { FileSystemService } from './fs.service';
+               ~~~~~~~~~~~~~~~~~
+
+    src/services/init.service.ts:10:32 - error TS2305: Module '"../constants/fs.constants"' has no exported member 'PROMPT_FILE_NAME'.
+
+    10 import { STATE_DIRECTORY_NAME, PROMPT_FILE_NAME } from '../constants/fs.constants';
+                                      ~~~~~~~~~~~~~~~~
+
+    src/services/init.service.ts:20:25 - error TS2554: Expected 1 arguments, but got 0.
+
+    20         await FsService.updateGitignore();
+                               ~~~~~~~~~~~~~~~
+
+      src/services/fs.service.ts:42:32
+        42 const updateGitignore = async (cwd: string): Promise<{ created: boolean, updated: boolean }> => {
+                                          ~~~~~~~~~~~
+        An argument for 'cwd' was not provided.
+
+
+    Found 5 errors.
+  expected:
+    - "src/components/SettingsScreen.tsx"
+    - "src/hooks/useDebugMenu.tsx"
+    - "src/stores/init.store.ts"
+    - "src/services/copy.service.ts"
+    - "src/services/init.service.ts"
+    - "src/services/fs.service.ts"
+
+------------
+
+=== DONE
+
 current algorithm is directly analysing blob to find the file path using regex strategy. I hate it only having one strategy..
 
 given the fuzzy name in readme,

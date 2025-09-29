@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import path from 'node:path';
-import { extractPaths, verifyPaths, type Options } from '../../dist/core.js';
+import { extractPaths, verifyPaths, type Options, type Strategy } from '../../dist/core.js';
 import {
   loadYamlFixture,
   setupTestDirectory,
@@ -12,30 +12,63 @@ type ExtractPathsTestCase = {
   options: Options;
   input: string;
   files?: { [path: string]: string };
-  expected: string[];
+  expected?: string[];
+  expected_by_strategy?: {
+    [S in Strategy]?: string[];
+  };
 };
 
 describe('core.ts', () => {
   describe('extractPaths', async () => {
     const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
 
-    for (const { name, options, input, files, expected } of fixtures) {
-      it(name, async () => {
-        let tempDir: string | undefined;
-        let cwd = options.cwd || process.cwd();
-        if (files && Object.keys(files).length > 0) {
-          tempDir = await setupTestDirectory(files);
-          cwd = tempDir;
-        }
+    for (const { name, options, input, files, expected, expected_by_strategy } of fixtures) {
+      if (expected_by_strategy) {
+        describe(name, () => {
+          for (const [strategy, expectedOutput] of Object.entries(
+            expected_by_strategy,
+          )) {
+            if (!expectedOutput) continue;
+            it(`with strategy: ${strategy}`, async () => {
+              let tempDir: string | undefined;
+              let cwd = options.cwd || process.cwd();
+              if (files && Object.keys(files).length > 0) {
+                tempDir = await setupTestDirectory(files);
+                cwd = tempDir;
+              }
 
-        const result = await extractPaths(input, { ...options, cwd });
-        // Sort for stable comparison
-        expect(result.sort()).toEqual(expected.sort());
+              const result = await extractPaths(input, {
+                ...options,
+                cwd,
+                strategy: strategy as Strategy,
+              });
+              // Sort for stable comparison
+              expect(result.sort()).toEqual(expectedOutput.sort());
 
-        if (tempDir) {
-          await cleanupTestDirectory(tempDir);
-        }
-      });
+              if (tempDir) {
+                await cleanupTestDirectory(tempDir);
+              }
+            });
+          }
+        });
+      } else {
+        it(name, async () => {
+          let tempDir: string | undefined;
+          let cwd = options.cwd || process.cwd();
+          if (files && Object.keys(files).length > 0) {
+            tempDir = await setupTestDirectory(files);
+            cwd = tempDir;
+          }
+
+          const result = await extractPaths(input, { ...options, cwd });
+          // Sort for stable comparison
+          expect(result.sort()).toEqual((expected ?? []).sort());
+
+          if (tempDir) {
+            await cleanupTestDirectory(tempDir);
+          }
+        });
+      }
     }
   });
 

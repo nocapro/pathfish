@@ -565,99 +565,6 @@ describe('engine.ts (Integration)', async () => {
 });
 ````
 
-## File: test/unit/core.test.ts
-````typescript
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import path from 'node:path';
-import { extractPaths, verifyPaths, type Options } from '../../dist/core.js';
-import {
-  loadYamlFixture,
-  setupTestDirectory,
-  cleanupTestDirectory,
-} from '../test.utils';
-
-type ExtractPathsTestCase = {
-  name: string;
-  options: Options;
-  input: string;
-  files?: { [path: string]: string };
-  expected: string[];
-};
-
-describe('core.ts', () => {
-  describe('extractPaths', async () => {
-    const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
-
-    for (const { name, options, input, files, expected } of fixtures) {
-      it(name, async () => {
-        let tempDir: string | undefined;
-        let cwd = process.cwd();
-        if (files && Object.keys(files).length > 0) {
-          tempDir = await setupTestDirectory(files);
-          cwd = tempDir;
-        }
-
-        const result = await extractPaths(input, { ...options, cwd });
-        // Sort for stable comparison
-        expect(result.sort()).toEqual(expected.sort());
-
-        if (tempDir) {
-          await cleanupTestDirectory(tempDir);
-        }
-      });
-    }
-  });
-
-  describe('verifyPaths', () => {
-    let tempDir: string;
-    const testFiles = {
-      'file1.txt': 'hello',
-      'dir/file2.js': 'content',
-      'dir/subdir/file3.json': '{}',
-    };
-
-    beforeEach(async () => {
-      tempDir = await setupTestDirectory(testFiles);
-    });
-
-    afterEach(async () => {
-      await cleanupTestDirectory(tempDir);
-    });
-
-    it('should return only paths that exist on disk', async () => {
-      const pathsToCheck = [
-        path.join(tempDir, 'file1.txt'), // exists
-        path.join(tempDir, 'dir/file2.js'), // exists
-        path.join(tempDir, 'non-existent.txt'), // does not exist
-        path.join(tempDir, 'dir/subdir/another.json'), // does not exist
-      ];
-
-      const expected = [
-        path.join(tempDir, 'file1.txt'),
-        path.join(tempDir, 'dir/file2.js'),
-      ];
-
-      const result = await verifyPaths(pathsToCheck, tempDir);
-      expect(result.sort()).toEqual(expected.sort());
-    });
-
-    it('should return an empty array if no paths exist', async () => {
-      const pathsToCheck = [
-        path.join(tempDir, 'foo.txt'),
-        path.join(tempDir, 'bar.js'),
-      ];
-      const result = await verifyPaths(pathsToCheck, tempDir);
-      expect(result).toEqual([]);
-    });
-
-    it('should return an empty array for empty input', async () => {
-      const result = await verifyPaths([], tempDir);
-      expect(result).toEqual([]);
-    });
-  });
-});
-````
-
 ## File: test/test.utils.ts
 ````typescript
 import { file } from 'bun';
@@ -1082,10 +989,138 @@ describe('cli.ts (E2E)', async () => {
 });
 ````
 
+## File: test/unit/core.test.ts
+````typescript
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import path from 'node:path';
+import { extractPaths, verifyPaths, type Options, type Strategy } from '../../dist/core.js';
+import {
+  loadYamlFixture,
+  setupTestDirectory,
+  cleanupTestDirectory,
+} from '../test.utils';
+
+type ExtractPathsTestCase = {
+  name: string;
+  options: Options;
+  input: string;
+  files?: { [path: string]: string };
+  expected?: string[];
+  expected_by_strategy?: {
+    [S in Strategy]?: string[];
+  };
+};
+
+describe('core.ts', () => {
+  describe('extractPaths', async () => {
+    const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
+
+    for (const { name, options, input, files, expected, expected_by_strategy } of fixtures) {
+      if (expected_by_strategy) {
+        describe(name, () => {
+          for (const [strategy, expectedOutput] of Object.entries(
+            expected_by_strategy,
+          )) {
+            if (!expectedOutput) continue;
+            it(`with strategy: ${strategy}`, async () => {
+              let tempDir: string | undefined;
+              let cwd = options.cwd || process.cwd();
+              if (files && Object.keys(files).length > 0) {
+                tempDir = await setupTestDirectory(files);
+                cwd = tempDir;
+              }
+
+              const result = await extractPaths(input, {
+                ...options,
+                cwd,
+                strategy: strategy as Strategy,
+              });
+              // Sort for stable comparison
+              expect(result.sort()).toEqual(expectedOutput.sort());
+
+              if (tempDir) {
+                await cleanupTestDirectory(tempDir);
+              }
+            });
+          }
+        });
+      } else {
+        it(name, async () => {
+          let tempDir: string | undefined;
+          let cwd = options.cwd || process.cwd();
+          if (files && Object.keys(files).length > 0) {
+            tempDir = await setupTestDirectory(files);
+            cwd = tempDir;
+          }
+
+          const result = await extractPaths(input, { ...options, cwd });
+          // Sort for stable comparison
+          expect(result.sort()).toEqual((expected ?? []).sort());
+
+          if (tempDir) {
+            await cleanupTestDirectory(tempDir);
+          }
+        });
+      }
+        }
+
+    }
+  });
+
+  describe('verifyPaths', () => {
+    let tempDir: string;
+    const testFiles = {
+      'file1.txt': 'hello',
+      'dir/file2.js': 'content',
+      'dir/subdir/file3.json': '{}',
+    };
+
+    beforeEach(async () => {
+      tempDir = await setupTestDirectory(testFiles);
+    });
+
+    afterEach(async () => {
+      await cleanupTestDirectory(tempDir);
+    });
+
+    it('should return only paths that exist on disk', async () => {
+      const pathsToCheck = [
+        path.join(tempDir, 'file1.txt'), // exists
+        path.join(tempDir, 'dir/file2.js'), // exists
+        path.join(tempDir, 'non-existent.txt'), // does not exist
+        path.join(tempDir, 'dir/subdir/another.json'), // does not exist
+      ];
+
+      const expected = [
+        path.join(tempDir, 'file1.txt'),
+        path.join(tempDir, 'dir/file2.js'),
+      ];
+
+      const result = await verifyPaths(pathsToCheck, tempDir);
+      expect(result.sort()).toEqual(expected.sort());
+    });
+
+    it('should return an empty array if no paths exist', async () => {
+      const pathsToCheck = [
+        path.join(tempDir, 'foo.txt'),
+        path.join(tempDir, 'bar.js'),
+      ];
+      const result = await verifyPaths(pathsToCheck, tempDir);
+      expect(result).toEqual([]);
+    });
+
+    it('should return an empty array for empty input', async () => {
+      const result = await verifyPaths([], tempDir);
+      expect(result).toEqual([]);
+    });
+  });
+});
+````
+
 ## File: test/unit/core.fixtures.yaml
 ````yaml
 - name: "Basic path extraction"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Here are some files: src/core.ts and ./README.md
     Also, a log file /var/log/syslog
@@ -1095,7 +1130,7 @@ describe('cli.ts (E2E)', async () => {
     - "/var/log/syslog"
 
 - name: "Windows path extraction"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Error in C:\\Users\\Test\\project\\src\\file.js
     Check the config at .\\config\\settings.json
@@ -1104,7 +1139,7 @@ describe('cli.ts (E2E)', async () => {
     - ".\\config\\settings.json"
 
 - name: "Path extraction with line and column numbers"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     src/components/Button.tsx:5:10 - error
     dist/bundle.js:1:12345
@@ -1114,7 +1149,7 @@ describe('cli.ts (E2E)', async () => {
     - "/app/main.py"
 
 - name: "Standalone filenames with extensions"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     The project uses bun.lockb and has a README.md.
     But this is: package.json
@@ -1123,17 +1158,17 @@ describe('cli.ts (E2E)', async () => {
     - "package.json"
 
 - name: "Unique paths option (default)"
-  options: { unique: true }
+  options: { unique: true, strategy: 'regex' }
   input: "See src/core.ts and again src/core.ts"
   expected: ["src/core.ts"]
 
 - name: "Non-unique paths option"
-  options: { unique: false }
+  options: { unique: false, strategy: 'regex' }
   input: "See src/core.ts and again src/core.ts"
   expected: ["src/core.ts", "src/core.ts"]
 
 - name: "Absolute paths option"
-  options: { absolute: true, cwd: "/home/user/project" }
+  options: { absolute: true, cwd: "/home/user/project", strategy: 'regex' }
   input: |
     Relative path: src/index.ts
     Dot-slash path: ./dist/main.js
@@ -1143,12 +1178,12 @@ describe('cli.ts (E2E)', async () => {
     - "/etc/hosts"
 
 - name: "Empty input"
-  options: {}
+  options: { strategy: 'regex' }
   input: "No paths here."
   expected: []
 
 - name: "Should ignore common transient/generated directories"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Path in node_modules/package/file.js
     Path in .git/hooks/pre-commit
@@ -1159,7 +1194,7 @@ describe('cli.ts (E2E)', async () => {
     - "distribution/file.js"
 
 - name: "Should ignore common lockfiles"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     This project uses bun.lockb and package-lock.json.
     But this is fine: my-package.json
@@ -1167,7 +1202,7 @@ describe('cli.ts (E2E)', async () => {
     - "my-package.json"
 
 - name: "Paths with special characters and surrounding punctuation"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Paths can be tricky: (src/components/Button (new).tsx),
     <[dist/app-v2.js]>, or even "quoted/path.css".
@@ -1178,14 +1213,14 @@ describe('cli.ts (E2E)', async () => {
     - "file.v2.js"
 
 - name: "Should extract common files without extensions"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Check the Dockerfile and also the Makefile for build instructions."
   expected:
     - "Dockerfile"
     - "Makefile"
 
 - name: "Should avoid matching domains from emails and URLs"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Contact me at user@domain.com.
     Check the website http://example.org/index.html and also https://another.com.
@@ -1197,7 +1232,7 @@ describe('cli.ts (E2E)', async () => {
     - "/server/file.txt"
 
 - name: "Advanced path extraction with complex cases"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Quoted path: "src/app/main.css"
     Path with query string: /assets/style.css?v=1.2
@@ -1220,7 +1255,7 @@ describe('cli.ts (E2E)', async () => {
     - "a/b/c.io"
 
 - name: "Quoted paths with spaces"
-  options: {}
+  options: { strategy: 'regex' }
   input: |
     Error in "/path with spaces/file.js" and also in 'another path/with spaces.ts'.
   expected:
@@ -1228,64 +1263,64 @@ describe('cli.ts (E2E)', async () => {
     - "another path/with spaces.ts"
 
 - name: "Paths with scoped npm packages"
-  options: {}
+  options: { strategy: 'regex' }
   input: 'Requires "@scoped/package/index.js" and also regular ''package/main.js'''
   expected:
     - "@scoped/package/index.js"
     - "package/main.js"
 
 - name: "Paths with tilde"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Check ~/documents/report.docx."
   expected:
     - "~/documents/report.docx"
 
 - name: "Complex relative paths with parent selectors"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Path is ../../src/app/../core/utils.ts"
   expected:
     - "../../src/app/../core/utils.ts"
 
 - name: "Windows UNC paths"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Data at \\\\network-share\\folder\\data.csv and //another/share"
   expected:
     - "\\\\network-share\\folder\\data.csv"
     - "//another/share"
 
 - name: "Should avoid matching version numbers"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Release v3.4.5 is out. See also file-1.2.3.log"
   expected:
     - "file-1.2.3.log"
 
 - name: "Should avoid matching UUIDs and commit hashes"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Error ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890, commit: f0e9d8c7. see file.log"
   expected:
     - "file.log"
 
 - name: "Paths inside URLs with ports"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Asset is at http://localhost:8080/assets/img/logo.png. And another at just /path/to/file.js"
   expected:
     - "/assets/img/logo.png"
     - "/path/to/file.js"
 
 - name: "Paths with mixed slashes"
-  options: {}
+  options: { strategy: 'regex' }
   input: "A strange path: src/mix\\slash/component.tsx"
   expected:
     - "src/mix\\slash/component.tsx"
 
 - name: "Paths with multiple parent selectors"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Go way up with ../../../../../etc/passwd"
   expected:
     - "../../../../../etc/passwd"
 
 - name: "Paths adjacent to brackets and commas"
-  options: {}
+  options: { strategy: 'regex' }
   input: "Files are [file1.txt], (file2.log), and {path/to/file3.json}."
   expected:
     - "file1.txt"
@@ -1331,13 +1366,28 @@ describe('cli.ts (E2E)', async () => {
 
 
     Found 5 errors.
-  expected:
-    - "src/components/SettingsScreen.tsx"
-    - "src/hooks/useDebugMenu.tsx"
-    - "src/stores/init.store.ts"
-    - "src/services/copy.service.ts"
-    - "src/services/init.service.ts"
-    - "src/services/fs.service.ts"
+  files:
+    "src/components/SettingsScreen.tsx": ""
+    "src/hooks/useDebugMenu.tsx": ""
+    "src/stores/init.store.ts": ""
+    "src/services/copy.service.ts": ""
+    "src/services/init.service.ts": ""
+    "src/services/fs.service.ts": ""
+  expected_by_strategy:
+    regex:
+      - "src/components/SettingsScreen.tsx"
+      - "src/hooks/useDebugMenu.tsx"
+      - "src/stores/init.store.ts"
+      - "src/services/copy.service.ts"
+      - "src/services/init.service.ts"
+      - "src/services/fs.service.ts"
+    fuzzy:
+      - "src/components/SettingsScreen.tsx"
+      - "src/hooks/useDebugMenu.tsx"
+      - "src/stores/init.store.ts"
+      - "src/services/copy.service.ts"
+      - "src/services/init.service.ts"
+      - "src/services/fs.service.ts"
 ````
 
 ## File: src/cli.ts
@@ -1477,6 +1527,47 @@ run().catch(err => {
 });
 ````
 
+## File: package.json
+````json
+{
+  "name": "pathfish",
+  "version": "0.1.7",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "pathfish": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "clipboardy": "^4.0.0",
+    "js-yaml": "^4.1.0",
+    "mri": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/js-yaml": "^4.0.9",
+    "@types/mri": "^1.1.5",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
+    "eslint": "^9.36.0",
+    "tsup": "^8.5.0"
+  },
+  "scripts": {
+    "dist-test": "tsup && bun test test",
+    "build": "tsup",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
+````
+
 ## File: src/core.ts
 ````typescript
 import path from 'node:path';
@@ -1577,7 +1668,7 @@ async function walk(dir: string): Promise<string[]> {
   let entries: import('node:fs').Dirent[];
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch (err) {
+  } catch {
     // Ignore errors from directories that cannot be read
     return [];
   }
@@ -1783,7 +1874,7 @@ function fixSplitPaths(paths: string[]): string[] {
     // Check if current path starts with '(' and next path ends with ')'
     if (i < paths.length - 1 &&
         current && (current.startsWith('(') || current.endsWith('(')) &&
-        paths[i + 1] && paths[i + 1]!.match(/\).*\.[a-zA-Z0-9]+$/)) {
+        paths[i + 1] && paths[i + 1]?.match(/\).*\.[a-zA-Z0-9]+$/)) {
       // Combine the paths and clean up
       let combined = current + ' ' + paths[i + 1];
 
@@ -1864,46 +1955,5 @@ export async function verifyPaths(paths: string[], cwd: string = process.cwd()):
   const existingPaths = paths.filter((_, i) => existenceChecks[i]);
 
   return existingPaths;
-}
-````
-
-## File: package.json
-````json
-{
-  "name": "pathfish",
-  "version": "0.1.7",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "type": "module",
-  "bin": {
-    "pathfish": "dist/cli.js"
-  },
-  "files": [
-    "dist"
-  ],
-  "dependencies": {
-    "clipboardy": "^4.0.0",
-    "js-yaml": "^4.1.0",
-    "mri": "^1.2.0"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "@types/js-yaml": "^4.0.9",
-    "@types/mri": "^1.1.5",
-    "@typescript-eslint/eslint-plugin": "^8.44.1",
-    "@typescript-eslint/parser": "^8.44.1",
-    "eslint": "^9.36.0",
-    "tsup": "^8.5.0"
-  },
-  "scripts": {
-    "dist-test": "tsup && bun test test",
-    "build": "tsup",
-    "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "bun run build"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
 }
 ````

@@ -1,0 +1,180 @@
+uuid: 4894de8d-0b89-4977-9dfd-b4b087037e46
+projectId: pathfish
+createdAt: '2025-09-29T00:52:16.077Z'
+gitCommitMsg: >-
+  fix(test): correct syntax error in core unit test
+
+  This commit resolves a TypeScript compilation error in
+  `test/unit/core.test.ts` caused by an extra closing brace introduced in the
+  previous refactoring.
+promptSummary: >-
+  I need to fix a TypeScript compilation error in `test/unit/core.test.ts` that
+  was introduced in the previous step.
+reasoning:
+  - >-
+    Of course. It looks like my previous change introduced a syntax error by
+    adding an extra closing brace. I apologize for that!
+  - Here is the fix for `test/unit/core.test.ts` to correct the syntax.
+  - >-
+    I've removed the stray curly braces that were causing the compilation error.
+    The test runner logic for comparing strategies remains intact. This should
+    resolve the issue and allow the tests to run correctly.
+operations:
+  - type: write
+    path: test/unit/core.test.ts
+    content: |+
+      --- test/unit/core.test.ts
+      +++ test/unit/core.test.ts
+      @@ -68,10 +68,7 @@
+                   await cleanupTestDirectory(tempDir);
+                 }
+               });
+             }
+      -        }
+      -
+      -    }
+      +    }
+         });
+       
+         describe('verifyPaths', () => {
+
+    patchStrategy: standard-diff
+snapshot:
+  test/unit/core.test.ts: >-
+    import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+
+    import path from 'node:path';
+
+    import { extractPaths, verifyPaths, type Options, type Strategy } from
+    '../../dist/core.js';
+
+    import {
+      loadYamlFixture,
+      setupTestDirectory,
+      cleanupTestDirectory,
+    } from '../test.utils';
+
+
+    type ExtractPathsTestCase = {
+      name: string;
+      options: Options;
+      input: string;
+      files?: { [path: string]: string };
+      expected?: string[];
+      expected_by_strategy?: {
+        [S in Strategy]?: string[];
+      };
+    };
+
+
+    describe('core.ts', () => {
+      describe('extractPaths', async () => {
+        const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
+
+        for (const { name, options, input, files, expected, expected_by_strategy } of fixtures) {
+          if (expected_by_strategy) {
+            describe(name, () => {
+              for (const [strategy, expectedOutput] of Object.entries(
+                expected_by_strategy,
+              )) {
+                if (!expectedOutput) continue;
+                it(`with strategy: ${strategy}`, async () => {
+                  let tempDir: string | undefined;
+                  let cwd = options.cwd || process.cwd();
+                  if (files && Object.keys(files).length > 0) {
+                    tempDir = await setupTestDirectory(files);
+                    cwd = tempDir;
+                  }
+
+                  const result = await extractPaths(input, {
+                    ...options,
+                    cwd,
+                    strategy: strategy as Strategy,
+                  });
+                  // Sort for stable comparison
+                  expect(result.sort()).toEqual(expectedOutput.sort());
+
+                  if (tempDir) {
+                    await cleanupTestDirectory(tempDir);
+                  }
+                });
+              }
+            });
+          } else {
+            it(name, async () => {
+              let tempDir: string | undefined;
+              let cwd = options.cwd || process.cwd();
+              if (files && Object.keys(files).length > 0) {
+                tempDir = await setupTestDirectory(files);
+                cwd = tempDir;
+              }
+
+              const result = await extractPaths(input, { ...options, cwd });
+              // Sort for stable comparison
+              expect(result.sort()).toEqual((expected ?? []).sort());
+
+              if (tempDir) {
+                await cleanupTestDirectory(tempDir);
+              }
+            });
+          }
+            }
+
+        }
+      });
+
+      describe('verifyPaths', () => {
+        let tempDir: string;
+        const testFiles = {
+          'file1.txt': 'hello',
+          'dir/file2.js': 'content',
+          'dir/subdir/file3.json': '{}',
+        };
+
+        beforeEach(async () => {
+          tempDir = await setupTestDirectory(testFiles);
+        });
+
+        afterEach(async () => {
+          await cleanupTestDirectory(tempDir);
+        });
+
+        it('should return only paths that exist on disk', async () => {
+          const pathsToCheck = [
+            path.join(tempDir, 'file1.txt'), // exists
+            path.join(tempDir, 'dir/file2.js'), // exists
+            path.join(tempDir, 'non-existent.txt'), // does not exist
+            path.join(tempDir, 'dir/subdir/another.json'), // does not exist
+          ];
+
+          const expected = [
+            path.join(tempDir, 'file1.txt'),
+            path.join(tempDir, 'dir/file2.js'),
+          ];
+
+          const result = await verifyPaths(pathsToCheck, tempDir);
+          expect(result.sort()).toEqual(expected.sort());
+        });
+
+        it('should return an empty array if no paths exist', async () => {
+          const pathsToCheck = [
+            path.join(tempDir, 'foo.txt'),
+            path.join(tempDir, 'bar.js'),
+          ];
+          const result = await verifyPaths(pathsToCheck, tempDir);
+          expect(result).toEqual([]);
+        });
+
+        it('should return an empty array for empty input', async () => {
+          const result = await verifyPaths([], tempDir);
+          expect(result).toEqual([]);
+        });
+      });
+    });
+approved: true
+linesAdded: null
+linesRemoved: null
+linesDifference: null
+gitCommittedAt: null
+status: committed
+id: 36
