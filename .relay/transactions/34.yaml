@@ -1,37 +1,192 @@
-uuid: 181b5df9-183e-4d40-b6ab-5cc2944b2f15
+uuid: 44030739-0158-450a-a197-00bb91d2938f
 projectId: pathfish
-createdAt: '2025-09-28T23:51:18.940Z'
+createdAt: '2025-09-29T00:04:41.739Z'
 gitCommitMsg: >-
-  fix: Correct syntax error in regex path extraction
+  feat(core): Parallelize fuzzy search and improve regex accuracy
 
-  Removes an extraneous closing brace within the `extractPathsWithRegex`
-  function that caused a TypeScript compilation failure.
+  Refactors the core path extraction engine for better performance and
+  reliability.
+
+  1.  **Parallel Fuzzy Search:** The `walk` function, which scans the filesystem
+  for the fuzzy strategy, has been rewritten to traverse directories in
+  parallel. This significantly speeds up path extraction on large codebases by
+  avoiding sequential `await` calls in the recursive scan.
+
+  2.  **Improved Regex Filtering:** The regex strategy's post-processing filter
+  has been enhanced. The previous implementation used a brittle, hardcoded list
+  to exclude method names from results. This is replaced with a more robust
+  heuristic that filters out potential method calls by identifying "extensions"
+  that are mixed-case or unusually long, making it more accurate at
+  distinguishing code from real file paths.
 promptSummary: >-
-  The user reported a TypeScript compilation error in `src/core.ts` caused by an
-  extra closing brace I introduced in the previous turn. I am now providing a
-  patch to remove that extra brace.
+  The user wants to improve the path extraction algorithm. They are not
+  satisfied with the current "fuzzy" strategy, want it to be more performant
+  (parallel), and for the regex strategy to be more accurate. They desire
+  `fuzzy`, `regex`, and `both` strategies, with `fuzzy` as the default.
 reasoning:
   - >-
-    Of course, my apologies for the syntax error. It looks like I introduced an
-    extra closing brace during the refactor. Here is the fix.
+    Based on your request, I'll refactor the path extraction logic to improve
+    both performance and accuracy.
+  - 'Here''s the plan:'
   - >-
-    I will remove the extraneous `}` from `src/core.ts`. This was causing the
-    `filter` callback to terminate prematurely, leading to the compilation
-    error.
+    1.  **Parallelize Fuzzy Search**: The "fuzzy" strategy relies on scanning
+    the file system. The current implementation does this sequentially. I will
+    rewrite the directory walking function in `src/core.ts` to be fully parallel
+    using `Promise.all`, which will significantly speed up this process in
+    projects with many files and folders. This directly addresses your concern
+    about performance.
+  - >-
+    2.  **Improve Regex Accuracy**: The regular expression strategy can
+    sometimes pick up things that aren't file paths, like method calls in stack
+    traces (e.g., `initActions.setAnalysisResults`). The existing filter for
+    this is brittle as it contains hard-coded method names. I will replace it
+    with a more robust, generic heuristic in `src/core.ts` that identifies and
+    filters these based on patterns like mixed-case "extensions," making the
+    `regex` and `both` strategies more reliable.
+  - >-
+    These changes will make the fuzzy search faster and the regex search
+    smarter, directly targeting the issues you raised about performance and the
+    algorithm's implementation.
+  - '### 1. Refactor Core Logic for Performance and Accuracy'
+  - >-
+    I'll start by modifying `src/core.ts`. The `walk` function will be updated
+    to traverse directories in parallel. Then, I'll replace the brittle filter
+    in `extractPathsWithRegex` with a more robust one.
+  - >-
+    These changes accomplish the goals. The fuzzy search will be faster due to
+    parallel file system traversal, and the regex strategy will be smarter at
+    distinguishing code from actual file paths.
 operations:
   - type: write
     path: src/core.ts
-    content: |+
+    content: >+
       --- src/core.ts
+
       +++ src/core.ts
-      @@ -268,7 +268,6 @@
-                 return false;
-               }
-             }
-      -    }
+
+      @@ -83,23 +83,24 @@
+         'g',
+       );
        
-           return !versionPattern.test(p) &&
-                  !uuidPattern.test(p) &&
+      -async function walk(dir: string): Promise<string[]> {
+
+      -  const allFiles: string[] = [];
+
+      -  try {
+
+      -    const entries = await fs.readdir(dir, { withFileTypes: true });
+
+      -    for (const entry of entries) {
+
+      -      const fullPath = path.join(dir, entry.name);
+
+      -      if (entry.isDirectory()) {
+
+      -        allFiles.push(...(await walk(fullPath)));
+
+      -      } else {
+
+      -        allFiles.push(fullPath);
+
+      -      }
+
+      -    }
+
+      -  } catch (err) {
+
+      -    // Ignore errors from directories that cannot be read
+
+      -  }
+
+      -  return allFiles;
+
+      -}
+
+      +async function walk(dir: string): Promise<string[]> {
+
+      +  let entries: import('node:fs').Dirent[];
+
+      +  try {
+
+      +    entries = await fs.readdir(dir, { withFileTypes: true });
+
+      +  } catch (err) {
+
+      +    // Ignore errors from directories that cannot be read
+
+      +    return [];
+
+      +  }
+
+      +
+
+      +  const promises = entries.map(async (entry) => {
+
+      +    const fullPath = path.join(dir, entry.name);
+
+      +    if (entry.isDirectory()) {
+
+      +      return walk(fullPath);
+
+      +    }
+
+      +    return [fullPath];
+
+      +  });
+
+      +
+
+      +  const results = await Promise.all(promises);
+
+      +  return results.flat();
+
+      +}
+       
+       /**
+        * Extracts paths using a fuzzy strategy by looking for file basenames in text.
+      @@ -223,12 +224,17 @@
+               if (p.includes('.') && !p.includes('/') && !p.includes('\\')) {
+                 // This could be a function call like 'initActions.setAnalysisResults'
+                 // But keep actual filenames like 'file.txt'
+                 const parts = p.split('.');
+                 if (parts.length > 1) {
+                   const lastPart = parts[parts.length - 1];
+      -            // If the last part doesn't look like a file extension, it's
+      probably a function call
+
+      -            if (!/^[a-zA-Z0-9]{1,5}$/.test(lastPart || '') ||
+
+      -                ['setAnalysisResults',
+      'updateGitignore'].includes(lastPart || '')) {
+
+      -              return false;
+
+      -            }
+
+      +            if (!lastPart) return false;
+
+      +
+
+      +            // If the "extension" is mixed case, it is not a file
+      extension.
+
+      +            const isMixedCase = /[A-Z]/.test(lastPart) &&
+      /[a-z]/.test(lastPart);
+
+      +            if (isMixedCase) {
+
+      +                return false;
+
+      +            }
+
+      +
+
+      +            // If it's very long, it's probably not an extension
+
+      +            if (lastPart.length > 8) return false;
+                 }
+               }
+               
 
     patchStrategy: standard-diff
 snapshot:
@@ -321,7 +476,6 @@ snapshot:
               return false;
             }
           }
-        }
 
         return !versionPattern.test(p) &&
                !uuidPattern.test(p) &&
@@ -440,6 +594,6 @@ approved: true
 linesAdded: null
 linesRemoved: null
 linesDifference: null
-gitCommittedAt: '2025-09-28T23:58:25.960Z'
+gitCommittedAt: null
 status: committed
-id: 31
+id: 34

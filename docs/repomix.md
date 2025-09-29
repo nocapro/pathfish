@@ -26,27 +26,6 @@ tsconfig.json
 
 # Files
 
-## File: src/index.ts
-````typescript
-// Re-export core functions and types for programmatic use.
-export { extractPaths, verifyPaths, type Options, type Strategy } from './core';
-
-// Import the low-level clipboard utility.
-import { copyToClipboard } from './utils';
-
-/**
- * Asynchronously copies an array of paths to the system clipboard,
- * formatting them as a newline-separated list.
- * It gracefully handles errors in environments without a clipboard (e.g., CI).
- * @param paths The array of path strings to copy.
- * @returns A promise that resolves when the operation is complete.
- */
-export async function copyPathsToClipboard(paths: string[]): Promise<void> {
-  const textToCopy = paths.join('\n');
-  await copyToClipboard(textToCopy);
-}
-````
-
 ## File: test/unit/utils.fixtures.yaml
 ````yaml
 - name: "should format as a JSON array (pretty)"
@@ -97,9 +76,30 @@ export async function copyPathsToClipboard(paths: string[]): Promise<void> {
       expected: ""
 ````
 
+## File: src/index.ts
+````typescript
+// Re-export core functions and types for programmatic use.
+export { extractPaths, verifyPaths, type Options, type Strategy } from './core';
+
+// Import the low-level clipboard utility.
+import { copyToClipboard } from './utils';
+
+/**
+ * Asynchronously copies an array of paths to the system clipboard,
+ * formatting them as a newline-separated list.
+ * It gracefully handles errors in environments without a clipboard (e.g., CI).
+ * @param paths The array of path strings to copy.
+ * @returns A promise that resolves when the operation is complete.
+ */
+export async function copyPathsToClipboard(paths: string[]): Promise<void> {
+  const textToCopy = paths.join('\n');
+  await copyToClipboard(textToCopy);
+}
+````
+
 ## File: src/engine.ts
 ````typescript
-import { extractPaths, verifyPaths, type Options } from './core';
+import { extractPaths, verifyPaths, type Options, type Strategy } from './core';
 import { createFormatter, type Format } from './utils';
 export type { Strategy } from './core';
 
@@ -207,6 +207,94 @@ export async function copyToClipboard(text: string): Promise<void> {
     // Suppress errors in environments without a clipboard. Copying is a
     // "nice-to-have" side effect, not a critical function.
   }
+}
+````
+
+## File: test/unit/utils.test.ts
+````typescript
+import { describe, it, expect } from 'bun:test';
+import { createFormatter, type Format } from '../../dist/utils.js';
+import { loadYamlFixture } from '../test.utils';
+
+type FormatterTestCase = {
+  name: string;
+  format: Format;
+  pretty: boolean;
+  input: string[];
+  expected: string;
+};
+
+type FormatterFixture = (
+  | FormatterTestCase
+  | { name: string; cases: FormatterTestCase[] }
+)[];
+
+describe('createFormatter', async () => {
+  it('should throw an error for an unknown format', () => {
+    // This is a type-level check, but we test the runtime guard
+    const badFormat = 'xml' as unknown as Format;
+    expect(() => createFormatter(badFormat, true)).toThrow(
+      'Unknown format: xml',
+    );
+  });
+
+  const fixtures = await loadYamlFixture<FormatterFixture>('unit/utils.fixtures.yaml');
+
+  for (const fixture of fixtures) {
+    if ('cases' in fixture) {
+      describe(fixture.name, () => {
+        for (const testCase of fixture.cases) {
+          it(`should format as ${testCase.format}`, () => {
+            const format = createFormatter(testCase.format, testCase.pretty);
+            const result = format(testCase.input);
+            expect(result.trim()).toEqual(testCase.expected.trim());
+          });
+        }
+      });
+    } else {
+      it(fixture.name, () => {
+        const format = createFormatter(fixture.format, fixture.pretty);
+        const result = format(fixture.input);
+        // Use trim to handle potential trailing newlines from YAML multiline strings
+        expect(result.trim()).toEqual(fixture.expected.trim());
+      });
+    }
+  }
+});
+````
+
+## File: tsconfig.json
+````json
+{
+  "compilerOptions": {
+    // Environment setup & latest features
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "allowJs": true,
+
+    // Bundler mode
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true,
+    "noEmit": false,
+    "outDir": "dist",
+
+    // Best practices
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+
+    // Some stricter flags (disabled by default)
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noPropertyAccessFromIndexSignature": false
+  },
+  "include": ["src", "test"]
 }
 ````
 
@@ -570,57 +658,82 @@ describe('core.ts', () => {
 });
 ````
 
-## File: test/unit/utils.test.ts
+## File: test/test.utils.ts
 ````typescript
-import { describe, it, expect } from 'bun:test';
-import { createFormatter, type Format } from '../../dist/utils.js';
-import { loadYamlFixture } from '../test.utils';
+import { file } from 'bun';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import yaml from 'js-yaml';
 
-type FormatterTestCase = {
-  name: string;
-  format: Format;
-  pretty: boolean;
-  input: string[];
-  expected: string;
-};
+/**
+ * Loads and parses a YAML fixture file.
+ * @param filePath The path to the YAML file, relative to the `test` directory.
+ * @returns The parsed data from the YAML file.
+ */
+export async function loadYamlFixture<T = unknown>(
+  filePath: string,
+): Promise<T> {
+  const absolutePath = path.resolve(process.cwd(), 'test', filePath);
+  const fileContent = await file(absolutePath).text();
+  return yaml.load(fileContent) as T;
+}
 
-type FormatterFixture = (
-  | FormatterTestCase
-  | { name: string; cases: FormatterTestCase[] }
-)[];
+/**
+ * Creates a temporary directory and populates it with the specified files.
+ * @param files A map where keys are relative file paths and values are their content.
+ * @returns The absolute path to the created temporary directory.
+ */
+export async function setupTestDirectory(files: {
+  [path: string]: string;
+}): Promise<string> {
+  const tempDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'pathfish-test-'),
+  );
 
-describe('createFormatter', async () => {
-  it('should throw an error for an unknown format', () => {
-    // This is a type-level check, but we test the runtime guard
-    const badFormat = 'xml' as unknown as Format;
-    expect(() => createFormatter(badFormat, true)).toThrow(
-      'Unknown format: xml',
-    );
+  for (const [filePath, content] of Object.entries(files)) {
+    const absolutePath = path.join(tempDir, filePath);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, content);
+  }
+  return tempDir;
+}
+
+/**
+ * Recursively removes a directory.
+ * @param dirPath The absolute path to the directory to remove.
+ */
+export async function cleanupTestDirectory(dirPath: string): Promise<void> {
+  await fs.rm(dirPath, { recursive: true, force: true });
+}
+
+/**
+ * Executes the CLI in a separate process.
+ * @param args An array of command-line arguments.
+ * @param stdinInput An optional string to pipe to the process's stdin.
+ * @param cwd The working directory for the spawned process.
+ * @returns A promise that resolves with the process's stdout, stderr, and exit code.
+ */
+export async function runCli(
+  args: string[],
+  stdinInput?: string,
+  cwd?: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const cliPath = path.resolve(process.cwd(), 'dist/cli.js');
+
+  const proc = Bun.spawn(['bun', cliPath, ...args], {
+    stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
+    cwd,
+    stderr: 'pipe',
+    stdout: 'pipe',
   });
 
-  const fixtures = await loadYamlFixture<FormatterFixture>('unit/utils.fixtures.yaml');
+  const exitCode = await proc.exited;
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
 
-  for (const fixture of fixtures) {
-    if ('cases' in fixture) {
-      describe(fixture.name, () => {
-        for (const testCase of fixture.cases) {
-          it(`should format as ${testCase.format}`, () => {
-            const format = createFormatter(testCase.format, testCase.pretty);
-            const result = format(testCase.input);
-            expect(result.trim()).toEqual(testCase.expected.trim());
-          });
-        }
-      });
-    } else {
-      it(fixture.name, () => {
-        const format = createFormatter(fixture.format, fixture.pretty);
-        const result = format(fixture.input);
-        // Use trim to handle potential trailing newlines from YAML multiline strings
-        expect(result.trim()).toEqual(fixture.expected.trim());
-      });
-    }
-  }
-});
+  return { stdout, stderr, exitCode };
+}
 ````
 
 ## File: README.md
@@ -869,403 +982,6 @@ npm run typecheck
 MIT
 ````
 
-## File: tsconfig.json
-````json
-{
-  "compilerOptions": {
-    // Environment setup & latest features
-    "lib": ["ESNext"],
-    "target": "ESNext",
-    "module": "Preserve",
-    "moduleDetection": "force",
-    "jsx": "react-jsx",
-    "allowJs": true,
-
-    // Bundler mode
-    "moduleResolution": "bundler",
-    "verbatimModuleSyntax": true,
-    "noEmit": false,
-    "outDir": "dist",
-
-    // Best practices
-    "strict": true,
-    "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-
-    // Some stricter flags (disabled by default)
-    "noImplicitAny": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noPropertyAccessFromIndexSignature": false
-  },
-  "include": ["src", "test"]
-}
-````
-
-## File: test/unit/core.fixtures.yaml
-````yaml
-- name: "Basic path extraction"
-  options: {}
-  input: |
-    Here are some files: src/core.ts and ./README.md
-    Also, a log file /var/log/syslog
-  expected:
-    - "src/core.ts"
-    - "./README.md"
-    - "/var/log/syslog"
-
-- name: "Windows path extraction"
-  options: { strategy: 'regex' }
-  input: |
-    Error in C:\\Users\\Test\\project\\src\\file.js
-    Check the config at .\\config\\settings.json
-  expected:
-    - "C:\\Users\\Test\\project\\src\\file.js"
-    - ".\\config\\settings.json"
-
-- name: "Path extraction with line and column numbers"
-  options: { strategy: 'regex' }
-  input: |
-    src/components/Button.tsx:5:10 - error
-    dist/bundle.js:1:12345
-    /app/main.py:42
-  expected:
-    - "src/components/Button.tsx"
-    - "/app/main.py"
-
-- name: "Standalone filenames with extensions"
-  options: { strategy: 'regex' }
-  input: |
-    The project uses bun.lockb and has a README.md.
-    But this is: package.json
-  expected:
-    - "README.md"
-    - "package.json"
-
-- name: "Unique paths option (default)"
-  options: { unique: true, strategy: 'regex' }
-  input: "See src/core.ts and again src/core.ts"
-  expected: ["src/core.ts"]
-
-- name: "Non-unique paths option"
-  options: { unique: false, strategy: 'regex' }
-  input: "See src/core.ts and again src/core.ts"
-  expected: ["src/core.ts", "src/core.ts"]
-
-- name: "Absolute paths option"
-  options: { absolute: true, cwd: "/home/user/project", strategy: 'regex' }
-  input: |
-    Relative path: src/index.ts
-    Dot-slash path: ./dist/main.js
-    Absolute path is unchanged: /etc/hosts
-  expected:
-    - "/home/user/project/src/index.ts"
-    - "/etc/hosts"
-
-- name: "Empty input"
-  options: { strategy: 'regex' }
-  input: "No paths here."
-  expected: []
-
-- name: "Should ignore common transient/generated directories"
-  options: { strategy: 'regex' }
-  input: |
-    Path in node_modules/package/file.js
-    Path in .git/hooks/pre-commit
-    Path in dist/bundle.js
-    Path in project/build/output.css
-    A file called distribution/file.js should not be ignored.
-  expected:
-    - "distribution/file.js"
-
-- name: "Should ignore common lockfiles"
-  options: { strategy: 'regex' }
-  input: |
-    This project uses bun.lockb and package-lock.json.
-    But this is fine: my-package.json
-  expected:
-    - "my-package.json"
-
-- name: "Paths with special characters and surrounding punctuation"
-  options: { strategy: 'regex' }
-  input: |
-    Paths can be tricky: (src/components/Button (new).tsx),
-    <[dist/app-v2.js]>, or even "quoted/path.css".
-    A path with a number in extension: file.v2.js
-  expected:
-    - "src/components/Button (new).tsx"
-    - "quoted/path.css"
-    - "file.v2.js"
-
-- name: "Should extract common files without extensions"
-  options: { strategy: 'regex' }
-  input: "Check the Dockerfile and also the Makefile for build instructions."
-  expected:
-    - "Dockerfile"
-    - "Makefile"
-
-- name: "Should avoid matching domains from emails and URLs"
-  options: { strategy: 'regex' }
-  input: |
-    Contact me at user@domain.com.
-    Check the website http://example.org/index.html and also https://another.com.
-    A file share: //server/file.txt
-    But this should be found: a/b/c.com
-  expected:
-    - "/index.html"
-    - "a/b/c.com"
-    - "/server/file.txt"
-
-- name: "Advanced path extraction with complex cases"
-  options: { strategy: 'regex' }
-  input: |
-    Quoted path: "src/app/main.css"
-    Path with query string: /assets/style.css?v=1.2
-    Path with fragment: /images/pic.jpg#fragment
-    Path in URL: https://example.com/some/path/to/resource.json
-    File with multiple dots: my.component.test.js and another.is.here.md
-    Path with unicode: src/för/måin.ts
-    Path next to text: file.txt,but notthispart.
-    Not a file: user@domain.com, nothing to see.
-    But this is a file: a/b/c.io
-  expected:
-    - "src/app/main.css"
-    - "/assets/style.css"
-    - "/images/pic.jpg"
-    - "/some/path/to/resource.json"
-    - "my.component.test.js"
-    - "another.is.here.md"
-    - "src/för/måin.ts"
-    - "file.txt"
-    - "a/b/c.io"
-
-- name: "Quoted paths with spaces"
-  options: { strategy: 'regex' }
-  input: |
-    Error in "/path with spaces/file.js" and also in 'another path/with spaces.ts'.
-  expected:
-    - "/path with spaces/file.js"
-    - "another path/with spaces.ts"
-
-- name: "Paths with scoped npm packages"
-  options: { strategy: 'regex' }
-  input: 'Requires "@scoped/package/index.js" and also regular ''package/main.js'''
-  expected:
-    - "@scoped/package/index.js"
-    - "package/main.js"
-
-- name: "Paths with tilde"
-  options: { strategy: 'regex' }
-  input: "Check ~/documents/report.docx."
-  expected:
-    - "~/documents/report.docx"
-
-- name: "Complex relative paths with parent selectors"
-  options: { strategy: 'regex' }
-  input: "Path is ../../src/app/../core/utils.ts"
-  expected:
-    - "../../src/app/../core/utils.ts"
-
-- name: "Windows UNC paths"
-  options: { strategy: 'regex' }
-  input: "Data at \\\\network-share\\folder\\data.csv and //another/share"
-  expected:
-    - "\\\\network-share\\folder\\data.csv"
-    - "//another/share"
-
-- name: "Should avoid matching version numbers"
-  options: { strategy: 'regex' }
-  input: "Release v3.4.5 is out. See also file-1.2.3.log"
-  expected:
-    - "file-1.2.3.log"
-
-- name: "Should avoid matching UUIDs and commit hashes"
-  options: { strategy: 'regex' }
-  input: "Error ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890, commit: f0e9d8c7. see file.log"
-  expected:
-    - "file.log"
-
-- name: "Paths inside URLs with ports"
-  options: { strategy: 'regex' }
-  input: "Asset is at http://localhost:8080/assets/img/logo.png. And another at just /path/to/file.js"
-  expected:
-    - "/assets/img/logo.png"
-    - "/path/to/file.js"
-
-- name: "Paths with mixed slashes"
-  options: { strategy: 'regex' }
-  input: "A strange path: src/mix\\slash/component.tsx"
-  expected:
-    - "src/mix\\slash/component.tsx"
-
-- name: "Paths with multiple parent selectors"
-  options: {}
-  input: "Go way up with ../../../../../etc/passwd"
-  expected:
-    - "../../../../../etc/passwd"
-
-- name: "Paths adjacent to brackets and commas"
-  options: { strategy: 'regex' }
-  input: "Files are [file1.txt], (file2.log), and {path/to/file3.json}."
-  expected:
-    - "file1.txt"
-    - "file2.log"
-    - "path/to/file3.json"
-- name: "Should extract paths from TypeScript compiler error output"
-  options: { strategy: 'regex' }
-  input: |
-    src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
-
-    5 import { AI_PROVIDERS, SETTINGS_FOOTER_ACTIONS } from '../constants/settings.constants';
-               ~~~~~~~~~~~~
-
-    src/hooks/useDebugMenu.tsx:101:29 - error TS2554: Expected 4 arguments, but got 3.
-
-    101                 initActions.setAnalysisResults('relaycode-tui', true, false);
-                                    ~~~~~~~~~~~~~~~~~~
-
-      src/stores/init.store.ts:30:99
-        30         setAnalysisResults: (projectId: string, gitignoreFound: boolean, gitInitialized: boolean, configExists: boolean) => void;
-                                                                                                             ~~~~~~~~~~~~~~~~~~~~~
-        An argument for 'configExists' was not provided.
-
-    src/services/copy.service.ts:5:10 - error TS2305: Module '"./fs.service"' has no exported member 'FileSystemService'.
-
-    5 import { FileSystemService } from './fs.service';
-               ~~~~~~~~~~~~~~~~~
-
-    src/services/init.service.ts:10:32 - error TS2305: Module '"../constants/fs.constants"' has no exported member 'PROMPT_FILE_NAME'.
-
-    10 import { STATE_DIRECTORY_NAME, PROMPT_FILE_NAME } from '../constants/fs.constants';
-                                      ~~~~~~~~~~~~~~~~
-
-    src/services/init.service.ts:20:25 - error TS2554: Expected 1 arguments, but got 0.
-
-    20         await FsService.updateGitignore();
-                               ~~~~~~~~~~~~~~~
-
-      src/services/fs.service.ts:42:32
-        42 const updateGitignore = async (cwd: string): Promise<{ created: boolean, updated: boolean }> => {
-                                          ~~~~~~~~~~~
-        An argument for 'cwd' was not provided.
-
-
-    Found 5 errors.
-  expected:
-    - "src/components/SettingsScreen.tsx"
-    - "src/hooks/useDebugMenu.tsx"
-    - "src/stores/init.store.ts"
-    - "src/services/copy.service.ts"
-    - "src/services/init.service.ts"
-    - "src/services/fs.service.ts"
-
-- name: "Fuzzy strategy: find file by basename"
-  options: { strategy: 'fuzzy' }
-  input: "I was working on core.ts and it was great."
-  files:
-    "src/core.ts": "content"
-    "src/utils.ts": "content"
-  expected:
-    - "src/core.ts"
-
-- name: "Fuzzy strategy should not find partial matches"
-  options: { strategy: 'fuzzy' }
-  input: "This is not-a-file.ts"
-  files:
-    "a-file.ts": "content"
-  expected: []
-
-- name: "Both strategy: combine regex and fuzzy results"
-  options: { strategy: 'both' }
-  input: "Regex finds src/app.js. Fuzzy finds utils.ts. Another regex path is /etc/hosts."
-  files:
-    "lib/utils.ts": "content"
-  expected:
-    - "src/app.js"
-    - "/etc/hosts"
-    - "lib/utils.ts"
-````
-
-## File: test/test.utils.ts
-````typescript
-import { file } from 'bun';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import os from 'node:os';
-import yaml from 'js-yaml';
-
-/**
- * Loads and parses a YAML fixture file.
- * @param filePath The path to the YAML file, relative to the `test` directory.
- * @returns The parsed data from the YAML file.
- */
-export async function loadYamlFixture<T = unknown>(
-  filePath: string,
-): Promise<T> {
-  const absolutePath = path.resolve(process.cwd(), 'test', filePath);
-  const fileContent = await file(absolutePath).text();
-  return yaml.load(fileContent) as T;
-}
-
-/**
- * Creates a temporary directory and populates it with the specified files.
- * @param files A map where keys are relative file paths and values are their content.
- * @returns The absolute path to the created temporary directory.
- */
-export async function setupTestDirectory(files: {
-  [path: string]: string;
-}): Promise<string> {
-  const tempDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), 'pathfish-test-'),
-  );
-
-  for (const [filePath, content] of Object.entries(files)) {
-    const absolutePath = path.join(tempDir, filePath);
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, content);
-  }
-  return tempDir;
-}
-
-/**
- * Recursively removes a directory.
- * @param dirPath The absolute path to the directory to remove.
- */
-export async function cleanupTestDirectory(dirPath: string): Promise<void> {
-  await fs.rm(dirPath, { recursive: true, force: true });
-}
-
-/**
- * Executes the CLI in a separate process.
- * @param args An array of command-line arguments.
- * @param stdinInput An optional string to pipe to the process's stdin.
- * @param cwd The working directory for the spawned process.
- * @returns A promise that resolves with the process's stdout, stderr, and exit code.
- */
-export async function runCli(
-  args: string[],
-  stdinInput?: string,
-  cwd?: string,
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const cliPath = path.resolve(process.cwd(), 'dist/cli.js');
-
-  const proc = Bun.spawn(['bun', cliPath, ...args], {
-    stdin: stdinInput ? new TextEncoder().encode(stdinInput) : 'pipe',
-    cwd,
-    stderr: 'pipe',
-    stdout: 'pipe',
-  });
-
-  const exitCode = await proc.exited;
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
-
-  return { stdout, stderr, exitCode };
-}
-````
-
 ## File: test/e2e/cli.test.ts
 ````typescript
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
@@ -1364,6 +1080,264 @@ describe('cli.ts (E2E)', async () => {
     });
   });
 });
+````
+
+## File: test/unit/core.fixtures.yaml
+````yaml
+- name: "Basic path extraction"
+  options: {}
+  input: |
+    Here are some files: src/core.ts and ./README.md
+    Also, a log file /var/log/syslog
+  expected:
+    - "src/core.ts"
+    - "./README.md"
+    - "/var/log/syslog"
+
+- name: "Windows path extraction"
+  options: {}
+  input: |
+    Error in C:\\Users\\Test\\project\\src\\file.js
+    Check the config at .\\config\\settings.json
+  expected:
+    - "C:\\Users\\Test\\project\\src\\file.js"
+    - ".\\config\\settings.json"
+
+- name: "Path extraction with line and column numbers"
+  options: {}
+  input: |
+    src/components/Button.tsx:5:10 - error
+    dist/bundle.js:1:12345
+    /app/main.py:42
+  expected:
+    - "src/components/Button.tsx"
+    - "/app/main.py"
+
+- name: "Standalone filenames with extensions"
+  options: {}
+  input: |
+    The project uses bun.lockb and has a README.md.
+    But this is: package.json
+  expected:
+    - "README.md"
+    - "package.json"
+
+- name: "Unique paths option (default)"
+  options: { unique: true }
+  input: "See src/core.ts and again src/core.ts"
+  expected: ["src/core.ts"]
+
+- name: "Non-unique paths option"
+  options: { unique: false }
+  input: "See src/core.ts and again src/core.ts"
+  expected: ["src/core.ts", "src/core.ts"]
+
+- name: "Absolute paths option"
+  options: { absolute: true, cwd: "/home/user/project" }
+  input: |
+    Relative path: src/index.ts
+    Dot-slash path: ./dist/main.js
+    Absolute path is unchanged: /etc/hosts
+  expected:
+    - "/home/user/project/src/index.ts"
+    - "/etc/hosts"
+
+- name: "Empty input"
+  options: {}
+  input: "No paths here."
+  expected: []
+
+- name: "Should ignore common transient/generated directories"
+  options: {}
+  input: |
+    Path in node_modules/package/file.js
+    Path in .git/hooks/pre-commit
+    Path in dist/bundle.js
+    Path in project/build/output.css
+    A file called distribution/file.js should not be ignored.
+  expected:
+    - "distribution/file.js"
+
+- name: "Should ignore common lockfiles"
+  options: {}
+  input: |
+    This project uses bun.lockb and package-lock.json.
+    But this is fine: my-package.json
+  expected:
+    - "my-package.json"
+
+- name: "Paths with special characters and surrounding punctuation"
+  options: {}
+  input: |
+    Paths can be tricky: (src/components/Button (new).tsx),
+    <[dist/app-v2.js]>, or even "quoted/path.css".
+    A path with a number in extension: file.v2.js
+  expected:
+    - "src/components/Button (new).tsx"
+    - "quoted/path.css"
+    - "file.v2.js"
+
+- name: "Should extract common files without extensions"
+  options: {}
+  input: "Check the Dockerfile and also the Makefile for build instructions."
+  expected:
+    - "Dockerfile"
+    - "Makefile"
+
+- name: "Should avoid matching domains from emails and URLs"
+  options: {}
+  input: |
+    Contact me at user@domain.com.
+    Check the website http://example.org/index.html and also https://another.com.
+    A file share: //server/file.txt
+    But this should be found: a/b/c.com
+  expected:
+    - "/index.html"
+    - "a/b/c.com"
+    - "/server/file.txt"
+
+- name: "Advanced path extraction with complex cases"
+  options: {}
+  input: |
+    Quoted path: "src/app/main.css"
+    Path with query string: /assets/style.css?v=1.2
+    Path with fragment: /images/pic.jpg#fragment
+    Path in URL: https://example.com/some/path/to/resource.json
+    File with multiple dots: my.component.test.js and another.is.here.md
+    Path with unicode: src/för/måin.ts
+    Path next to text: file.txt,but notthispart.
+    Not a file: user@domain.com, nothing to see.
+    But this is a file: a/b/c.io
+  expected:
+    - "src/app/main.css"
+    - "/assets/style.css"
+    - "/images/pic.jpg"
+    - "/some/path/to/resource.json"
+    - "my.component.test.js"
+    - "another.is.here.md"
+    - "src/för/måin.ts"
+    - "file.txt"
+    - "a/b/c.io"
+
+- name: "Quoted paths with spaces"
+  options: {}
+  input: |
+    Error in "/path with spaces/file.js" and also in 'another path/with spaces.ts'.
+  expected:
+    - "/path with spaces/file.js"
+    - "another path/with spaces.ts"
+
+- name: "Paths with scoped npm packages"
+  options: {}
+  input: 'Requires "@scoped/package/index.js" and also regular ''package/main.js'''
+  expected:
+    - "@scoped/package/index.js"
+    - "package/main.js"
+
+- name: "Paths with tilde"
+  options: {}
+  input: "Check ~/documents/report.docx."
+  expected:
+    - "~/documents/report.docx"
+
+- name: "Complex relative paths with parent selectors"
+  options: {}
+  input: "Path is ../../src/app/../core/utils.ts"
+  expected:
+    - "../../src/app/../core/utils.ts"
+
+- name: "Windows UNC paths"
+  options: {}
+  input: "Data at \\\\network-share\\folder\\data.csv and //another/share"
+  expected:
+    - "\\\\network-share\\folder\\data.csv"
+    - "//another/share"
+
+- name: "Should avoid matching version numbers"
+  options: {}
+  input: "Release v3.4.5 is out. See also file-1.2.3.log"
+  expected:
+    - "file-1.2.3.log"
+
+- name: "Should avoid matching UUIDs and commit hashes"
+  options: {}
+  input: "Error ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890, commit: f0e9d8c7. see file.log"
+  expected:
+    - "file.log"
+
+- name: "Paths inside URLs with ports"
+  options: {}
+  input: "Asset is at http://localhost:8080/assets/img/logo.png. And another at just /path/to/file.js"
+  expected:
+    - "/assets/img/logo.png"
+    - "/path/to/file.js"
+
+- name: "Paths with mixed slashes"
+  options: {}
+  input: "A strange path: src/mix\\slash/component.tsx"
+  expected:
+    - "src/mix\\slash/component.tsx"
+
+- name: "Paths with multiple parent selectors"
+  options: {}
+  input: "Go way up with ../../../../../etc/passwd"
+  expected:
+    - "../../../../../etc/passwd"
+
+- name: "Paths adjacent to brackets and commas"
+  options: {}
+  input: "Files are [file1.txt], (file2.log), and {path/to/file3.json}."
+  expected:
+    - "file1.txt"
+    - "file2.log"
+    - "path/to/file3.json"
+- name: "Should extract paths from TypeScript compiler error output"
+  options: {}
+  input: |
+    src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
+
+    5 import { AI_PROVIDERS, SETTINGS_FOOTER_ACTIONS } from '../constants/settings.constants';
+               ~~~~~~~~~~~~
+
+    src/hooks/useDebugMenu.tsx:101:29 - error TS2554: Expected 4 arguments, but got 3.
+
+    101                 initActions.setAnalysisResults('relaycode-tui', true, false);
+                                    ~~~~~~~~~~~~~~~~~~
+
+      src/stores/init.store.ts:30:99
+        30         setAnalysisResults: (projectId: string, gitignoreFound: boolean, gitInitialized: boolean, configExists: boolean) => void;
+                                                                                                             ~~~~~~~~~~~~~~~~~~~~~
+        An argument for 'configExists' was not provided.
+
+    src/services/copy.service.ts:5:10 - error TS2305: Module '"./fs.service"' has no exported member 'FileSystemService'.
+
+    5 import { FileSystemService } from './fs.service';
+               ~~~~~~~~~~~~~~~~~
+
+    src/services/init.service.ts:10:32 - error TS2305: Module '"../constants/fs.constants"' has no exported member 'PROMPT_FILE_NAME'.
+
+    10 import { STATE_DIRECTORY_NAME, PROMPT_FILE_NAME } from '../constants/fs.constants';
+                                      ~~~~~~~~~~~~~~~~
+
+    src/services/init.service.ts:20:25 - error TS2554: Expected 1 arguments, but got 0.
+
+    20         await FsService.updateGitignore();
+                               ~~~~~~~~~~~~~~~
+
+      src/services/fs.service.ts:42:32
+        42 const updateGitignore = async (cwd: string): Promise<{ created: boolean, updated: boolean }> => {
+                                          ~~~~~~~~~~~
+        An argument for 'cwd' was not provided.
+
+
+    Found 5 errors.
+  expected:
+    - "src/components/SettingsScreen.tsx"
+    - "src/hooks/useDebugMenu.tsx"
+    - "src/stores/init.store.ts"
+    - "src/services/copy.service.ts"
+    - "src/services/init.service.ts"
+    - "src/services/fs.service.ts"
 ````
 
 ## File: src/cli.ts
@@ -1600,21 +1574,24 @@ const PATH_REGEX = new RegExp(
 );
 
 async function walk(dir: string): Promise<string[]> {
-  const allFiles: string[] = [];
+  let entries: import('node:fs').Dirent[];
   try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        allFiles.push(...(await walk(fullPath)));
-      } else {
-        allFiles.push(fullPath);
-      }
-    }
+    entries = await fs.readdir(dir, { withFileTypes: true });
   } catch (err) {
     // Ignore errors from directories that cannot be read
+    return [];
   }
-  return allFiles;
+
+  const promises = entries.map(async (entry) => {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return walk(fullPath);
+    }
+    return [fullPath];
+  });
+
+  const results = await Promise.all(promises);
+  return results.flat();
 }
 
 /**
@@ -1752,11 +1729,16 @@ const validPaths = filteredPaths.filter(p => {
       const parts = p.split('.');
       if (parts.length > 1) {
         const lastPart = parts[parts.length - 1];
-        // If the last part doesn't look like a file extension, it's probably a function call
-        if (!/^[a-zA-Z0-9]{1,5}$/.test(lastPart || '') ||
-            ['setAnalysisResults', 'updateGitignore'].includes(lastPart || '')) {
-          return false;
-        }
+            if (!lastPart) return false;
+
+            // If the "extension" is mixed case, it is not a file extension.
+            const isMixedCase = /[A-Z]/.test(lastPart) && /[a-z]/.test(lastPart);
+            if (isMixedCase) {
+                return false;
+            }
+
+            // If it's very long, it's probably not an extension
+            if (lastPart.length > 8) return false;
       }
     }
     
@@ -1914,7 +1896,7 @@ export async function verifyPaths(paths: string[], cwd: string = process.cwd()):
     "tsup": "^8.5.0"
   },
   "scripts": {
-    "test": "tsup && bun test test",
+    "dist-test": "tsup && bun test test",
     "build": "tsup",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

@@ -93,21 +93,24 @@ const PATH_REGEX = new RegExp(
 );
 
 async function walk(dir: string): Promise<string[]> {
-  const allFiles: string[] = [];
+  let entries: import('node:fs').Dirent[];
   try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        allFiles.push(...(await walk(fullPath)));
-      } else {
-        allFiles.push(fullPath);
-      }
-    }
+    entries = await fs.readdir(dir, { withFileTypes: true });
   } catch (err) {
     // Ignore errors from directories that cannot be read
+    return [];
   }
-  return allFiles;
+
+  const promises = entries.map(async (entry) => {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return walk(fullPath);
+    }
+    return [fullPath];
+  });
+
+  const results = await Promise.all(promises);
+  return results.flat();
 }
 
 /**
@@ -245,11 +248,16 @@ const validPaths = filteredPaths.filter(p => {
       const parts = p.split('.');
       if (parts.length > 1) {
         const lastPart = parts[parts.length - 1];
-        // If the last part doesn't look like a file extension, it's probably a function call
-        if (!/^[a-zA-Z0-9]{1,5}$/.test(lastPart || '') ||
-            ['setAnalysisResults', 'updateGitignore'].includes(lastPart || '')) {
-          return false;
-        }
+            if (!lastPart) return false;
+
+            // If the "extension" is mixed case, it is not a file extension.
+            const isMixedCase = /[A-Z]/.test(lastPart) && /[a-z]/.test(lastPart);
+            if (isMixedCase) {
+                return false;
+            }
+
+            // If it's very long, it's probably not an extension
+            if (lastPart.length > 8) return false;
       }
     }
     
