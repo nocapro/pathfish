@@ -1,0 +1,1242 @@
+uuid: 4004da36-056a-4d26-a006-a1975b9f7a77
+projectId: pathfish
+createdAt: '2025-09-30T05:07:55.781Z'
+gitCommitMsg: >-
+  feat: Automatically copy output to clipboard when piping input
+
+  This introduces a "smart copy" feature to the CLI. When input is piped to
+  `pathfish` and the output is being sent to an interactive terminal, the result
+  is now automatically copied to the system clipboard.
+
+  This improves the core workflow of using `pathfish` in shell pipelines for
+  interactive use, like `eslint . | pathfish`.
+
+  - The default behavior can be disabled with a new `--no-copy` flag. - The
+  `--copy` flag can still be used to force copying in all scenarios. - The
+  README and CLI help text have been updated to reflect this new
+    default behavior.
+  - Internal flags have been added to allow for E2E testing of this
+    TTY-dependent functionality.
+promptSummary: Implement automatic copying to clipboard when input is piped to the CLI.
+reasoning:
+  - >-
+    This request is to implement automatic copying of the output to the
+    clipboard, especially when input is piped to `pathfish`. I will implement a
+    "smart copy" feature that enables this behavior by default, with flags to
+    override it.
+  - 'Here is my plan:'
+  - 1.  **Modify `src/cli.ts`:**
+  - >-
+    *   Update the CLI help text to explain the new default copy behavior and
+    the `--copy`/`--no-copy` flags.
+  - >-
+    *   Implement logic to detect if input is being piped and if output is to an
+    interactive terminal (TTY).
+  - >-
+    *   The new rule will be: automatically copy to clipboard if input is piped
+    AND output is to a TTY.
+  - '*   The `--copy` flag will force copying in all cases.'
+  - '*   The `--no-copy` flag will disable copying in all cases.'
+  - >-
+    *   To make this testable, I'll add some hidden, internal flags
+    (`--__INTERNAL_STDOUT_IS_TTY`, `--__INTERNAL_STDIN_IS_TTY`,
+    `--__INTERNAL_TEST_COPY`) that allow E2E tests to simulate TTY environments
+    and check if the copy action was triggered.
+  - 2.  **Update `test/e2e/cli.fixtures.yaml`:**
+  - '*   Add new test cases to verify the smart copy logic:'
+  - '*   Test that copying is enabled by default with piped input.'
+  - '*   Test that `--no-copy` disables it.'
+  - '*   Test that it''s disabled for non-piped/interactive input.'
+  - '*   Test that `--copy` forces it even for non-piped input.'
+  - 3.  **Update `README.md`:**
+  - >-
+    *   Revise the feature list and CLI examples to reflect that smart copy is a
+    key feature.
+  - >-
+    *   Update the CLI flags table to accurately describe the behavior of
+    `--copy` and `--no-copy`.
+  - >-
+    *   Simplify CLI examples that previously used `--copy`, as it's now often
+    the default.
+  - I will now apply these changes.
+  - >-
+    First, I'll update `src/cli.ts` to implement the smart copy functionality
+    and the necessary testing hooks.
+  - Next, I'll add the E2E tests for this new behavior.
+  - >-
+    Finally, I'll update the `README.md` to reflect the new feature and its
+    usage.
+  - >-
+    These changes fulfill the request by implementing a more intelligent
+    clipboard behavior that should improve the interactive user experience.
+operations:
+  - type: write
+    path: src/cli.ts
+    content: >+
+      --- src/cli.ts
+
+      +++ src/cli.ts
+
+      @@ -14,19 +14,22 @@
+         cat [file] | pathfish [options]
+       
+      +By default, pathfish will automatically copy its output to your clipboard
+
+      +when you pipe input to it (e.g., \`git status | pathfish\`).
+
+      +
+       Options:
+         --strategy <strat> Path extraction strategy: regex, fuzzy, both (default: fuzzy)
+         --format <format>  Output format: json, yaml, list (default: json)
+         --pretty           Pretty-print JSON output (default: true)
+         --absolute         Convert all paths to absolute
+         --cwd <dir>        Base directory for resolving paths (default: process.cwd())
+         --no-verify        Do not filter out paths that do not exist on disk
+      -  --copy             Copy the final output to the clipboard
+
+      +  --copy             Force copying the output to the clipboard
+
+      +  --no-copy          Disable copying output to the clipboard
+         --help, -h         Show this help message
+         --version, -v      Show version number
+       `;
+       
+       type CliArgs = {
+         _: string[];
+         help?: boolean;
+      @@ -38,6 +41,9 @@
+         format?: string;
+         strategy?: string;
+         cwd?: string;
+      +  '__INTERNAL_TEST_COPY'?: boolean;
+
+      +  '__INTERNAL_STDOUT_IS_TTY'?: boolean;
+
+      +  '__INTERNAL_STDIN_IS_TTY'?: boolean;
+       };
+       
+       
+      @@ -46,7 +52,15 @@
+        */
+       async function run() {
+         const args: CliArgs = mri(process.argv.slice(2), {
+      -    boolean: ['help', 'version', 'pretty', 'absolute', 'copy'],
+
+      +    boolean: [
+
+      +      'help',
+
+      +      'version',
+
+      +      'pretty',
+
+      +      'absolute',
+
+      +      'copy',
+
+      +      '__INTERNAL_TEST_COPY',
+
+      +      '__INTERNAL_STDOUT_IS_TTY',
+
+      +      '__INTERNAL_STDIN_IS_TTY',
+
+      +    ],
+           string: ['format', 'cwd', 'strategy'],
+           alias: { h: 'help', v: 'version' },
+           default: {
+      @@ -74,6 +88,16 @@
+         const inputFile = args._[0];
+         let inputText: string;
+       
+      +  // Determine TTY status, allowing overrides for testing
+
+      +  const isStdoutTty = args['__INTERNAL_STDOUT_IS_TTY'] ??
+      process.stdout.isTTY;
+
+      +  const isStdinTty = args['__INTERNAL_STDIN_IS_TTY'] ??
+      process.stdin.isTTY;
+
+      +
+
+      +  // Input is considered "piped" if we are reading from stdin and it's
+      not a TTY.
+
+      +  const isPipedInput = !inputFile && !isStdinTty;
+
+      +
+
+      +  // Smart copy logic: copy if forced, or if piping input to an
+      interactive terminal
+
+      +  const wantsCopy =
+
+      +    args.copy === true || (args.copy !== false && isPipedInput &&
+      isStdoutTty);
+         try {
+           inputText = inputFile
+             ? readFileSync(path.resolve(args.cwd || process.cwd(), inputFile), 'utf-8')
+      @@ -95,12 +119,19 @@
+           strategy: strategy,
+         };
+       
+      -  
+         const result = await runPipeline(inputText, options);
+         console.log(result);
+       
+         // Copying is a side effect that happens after the result is ready.
+      -  if (args.copy) await copyToClipboard(result);
+
+      +  if (wantsCopy) {
+
+      +    if (args['__INTERNAL_TEST_COPY']) {
+
+      +      // Use a distinct format to avoid accidental matches in test stderr
+
+      +      process.stderr.write(`__CLIPBOARD_COPY__:${result}`);
+
+      +    } else {
+
+      +      await copyToClipboard(result);
+
+      +    }
+
+      +  }
+       }
+       
+       run().catch(err => {
+
+    patchStrategy: standard-diff
+  - type: write
+    path: test/e2e/cli.fixtures.yaml
+    content: |-
+      - name: "should show help text with --help"
+        args: ["--help"]
+        expected_stdout_contains: "Usage:"
+        exit_code: 0
+
+      - name: "should show version with --version"
+        args: ["--version"]
+        expected_stdout_contains: "v" # Will be checked against package.json version
+        exit_code: 0
+
+      - name: "should read from stdin and output pretty json by default"
+        args: ["--strategy", "regex"]
+        stdin: "path is src/index.ts"
+        files:
+          "src/index.ts": ""
+        expected_stdout: |
+          [
+            "src/index.ts"
+          ]
+
+      - name: "should output compact json with --pretty=false"
+        args: ["--pretty=false", "--strategy", "regex"]
+        stdin: "path is src/index.ts"
+        files:
+          "src/index.ts": ""
+        expected_stdout: '["src/index.ts"]'
+
+      - name: "should read from a file argument"
+        args: ["input.log", "--strategy", "regex"]
+        files:
+          "input.log": "path in file is src/index.ts"
+          "src/index.ts": ""
+        expected_stdout: |
+          [
+            "src/index.ts"
+          ]
+
+      - name: "should output yaml with --format yaml"
+        args: ["--format", "yaml", "--strategy", "regex"]
+        stdin: "src/app.js and src/style.css"
+        files:
+          "src/app.js": ""
+          "src/style.css": ""
+        expected_stdout: |
+          - src/app.js
+          - src/style.css
+
+      - name: "should output a list with --format list"
+        args: ["--format", "list", "--strategy", "regex"]
+        stdin: "src/app.js and src/style.css"
+        files:
+          "src/app.js": ""
+          "src/style.css": ""
+        expected_stdout: |
+          src/app.js
+          src/style.css
+
+      - name: "should filter out non-existing files by default"
+        args: ["--format", "list", "--strategy", "regex"]
+        stdin: "good: file1.txt, bad: missing.txt"
+        files:
+          "file1.txt": "content"
+        expected_stdout: "file1.txt"
+
+      - name: "should include non-existing files with --no-verify"
+        args: ["--no-verify", "--format", "list", "--strategy", "regex"]
+        stdin: "good: file1.txt, bad: missing.txt"
+        files:
+          "file1.txt": "content"
+        expected_stdout: |
+          file1.txt
+          missing.txt
+
+      - name: "should make paths absolute with --absolute"
+        args: ["--absolute", "--format", "list", "--no-verify", "--strategy", "regex"]
+        stdin: "relative/path.js"
+        expected_stdout: "{{CWD}}/relative/path.js"
+
+      - name: "should use specified --cwd for absolute paths"
+        args: ["--no-verify", "--absolute", "--format", "list", "--strategy", "regex", "--cwd", "{{CWD}}/fake-root"]
+        stdin: "relative/path.js"
+        files: # create the fake root so it's a valid directory
+          "fake-root/placeholder.txt": ""
+        expected_stdout: "{{CWD}}/fake-root/relative/path.js"
+
+      - name: "should work with --copy flag (output is unchanged)"
+        args: ["--copy", "--format", "list", "--strategy", "regex"]
+        stdin: "src/main.ts"
+        files:
+          "src/main.ts": ""
+        expected_stdout: "src/main.ts"
+
+      - name: "should handle a combination of flags"
+        args: ["data.log", "--absolute", "--format", "yaml", "--strategy", "regex"]
+        stdin: "" # Reading from file
+        files:
+          "data.log": "valid: existing.js, invalid: missing.js"
+          "existing.js": "export {}"
+        expected_stdout: "- {{CWD}}/existing.js"
+
+      - name: "should report error and exit 1 if input file does not exist"
+        args: ["nonexistent.log"]
+        expected_stderr_contains: "Error:"
+        exit_code: 1
+
+      - name: "should produce empty output for no matches"
+        args: ["--format", "list", "--strategy", "regex"]
+        stdin: "no paths here"
+        expected_stdout: ""
+
+      - name: "should handle complex paths from stdin"
+        args: ["--no-verify", "--format", "list", "--strategy", "regex"]
+        stdin: "url.com/path/to/file.js?v=42 and a/b/c.py#L10"
+        files: {}
+        expected_stdout: |
+          /path/to/file.js
+          a/b/c.py
+
+      - name: "should handle quoted paths with spaces from stdin"
+        args: ["--no-verify", "--format", "list", "--strategy", "regex"]
+        stdin: 'Found file in "path with spaces/file.txt"'
+        files: {}
+        expected_stdout: |
+          path with spaces/file.txt
+
+      - name: "should use fuzzy strategy by default"
+        args: ["--format", "list"]
+        stdin: "Just a mention of cli.ts should be enough."
+        files:
+          "src/cli.ts": "content"
+          "README.md": "content"
+        expected_stdout: "src/cli.ts"
+
+      - name: "should auto-copy when piping input to a TTY-like output"
+        args: ["--__INTERNAL_TEST_COPY", "--__INTERNAL_STDOUT_IS_TTY", "--format", "list", "--strategy", "regex"]
+        stdin: "src/main.ts" # Piped input -> isStdinTty is false in test env
+        files:
+          "src/main.ts": ""
+        expected_stdout: "src/main.ts"
+        expected_stderr_contains: "__CLIPBOARD_COPY__:src/main.ts"
+
+      - name: "should NOT auto-copy with --no-copy even with piped input"
+        args: ["--no-copy", "--__INTERNAL_TEST_COPY", "--__INTERNAL_STDOUT_IS_TTY", "--format", "list", "--strategy", "regex"]
+        stdin: "src/main.ts"
+        files:
+          "src/main.ts": ""
+        expected_stdout: "src/main.ts"
+
+      - name: "should NOT auto-copy when input is from TTY (interactive)"
+        args: ["--__INTERNAL_TEST_COPY", "--__INTERNAL_STDOUT_IS_TTY", "--__INTERNAL_STDIN_IS_TTY", "--format", "list", "--strategy", "regex"]
+        stdin: "src/main.ts" # Stdin is still provided to avoid hanging, but flag forces isStdinTty to true
+        files:
+          "src/main.ts": ""
+        expected_stdout: "src/main.ts"
+
+      - name: "should force copy with --copy even when input is from TTY"
+        args: ["--copy", "--__INTERNAL_TEST_COPY", "--__INTERNAL_STDOUT_IS_TTY", "--__INTERNAL_STDIN_IS_TTY", "--format", "list", "--strategy", "regex"]
+        stdin: "src/main.ts"
+        files:
+          "src/main.ts": ""
+        expected_stdout: "src/main.ts"
+        expected_stderr_contains: "__CLIPBOARD_COPY__:src/main.ts"
+    patchStrategy: replace
+  - type: write
+    path: README.md
+    content: >
+      <<<<<<< SEARCH
+
+      -   ✅ **Verifies paths by default**: Only returns paths that actually
+      exist.
+
+      -   🧠 **Fuzzy matching**: Catches paths with or without extensions, with
+      line/column numbers, and in various formats (Unix, Windows, relative,
+      absolute).
+
+      -   🎨 **Multiple formats**: Output as JSON, YAML, or a simple list.
+
+      -   📋 **Clipboard support**: Instantly copy the output to your clipboard
+      with `--copy`.
+
+      -   🔗 **Chainable**: Designed to be a powerful part of your shell
+      pipelines.
+
+      =======
+
+      -   ✅ **Verifies paths by default**: Only returns paths that actually
+      exist.
+
+      -   🧠 **Fuzzy matching**: Catches paths with or without extensions, with
+      line/column numbers, and in various formats (Unix, Windows, relative,
+      absolute).
+
+      -   🎨 **Multiple formats**: Output as JSON, YAML, or a simple list.
+
+      -   📋 **Smart clipboard**: Automatically copies output to your clipboard
+      when piping from another command.
+
+      -   🔗 **Chainable**: Designed to be a powerful part of your shell
+      pipelines.
+
+      >>>>>>> REPLACE
+
+      <<<<<<< SEARCH
+
+      # Read from stdin
+
+      eslint . | pathfish
+
+
+      # Choose an output format
+
+      pathfish --format yaml lint.log
+
+      pathfish --format list lint.log
+
+
+      # Include paths that DON'T exist on disk
+
+      pathfish --no-verify lint.log
+
+
+      # Copy the resulting list to your clipboard
+
+      eslint . | pathfish --copy --format list
+
+
+      # Convert all paths to be absolute
+
+      pathfish --absolute lint.log
+
+
+      # A powerful pipeline: find all paths from TS and ESLint,
+
+      # make them absolute, and copy the list to the clipboard.
+
+      (tsc --noEmit && eslint .) | pathfish --absolute --copy --format list
+
+      =======
+
+      # Read from stdin
+
+      eslint . | pathfish
+
+
+      # It's also automatically copied to your clipboard!
+
+
+      # Choose an output format
+
+      pathfish --format yaml lint.log
+
+      pathfish --format list lint.log
+
+
+      # Include paths that DON'T exist on disk
+
+      pathfish --no-verify lint.log
+
+
+      # Convert all paths to be absolute
+
+      pathfish --absolute lint.log
+
+
+      # A powerful pipeline: find all paths from TS and ESLint, make them
+
+      # absolute, and copy the list to the clipboard. It's copied by default!
+
+      (tsc --noEmit && eslint .) | pathfish --absolute --format list
+
+      >>>>>>> REPLACE
+
+      <<<<<<< SEARCH
+
+      | Flag                |
+      Description                                                          |
+      Default         |
+
+      | ------------------- |
+      -------------------------------------------------------------------- |
+      --------------- |
+
+      | `--format <format>` | Output format: `json`, `yaml`,
+      `list`.                               | `json`          |
+
+      | `--pretty`          | Pretty-print JSON
+      output.                                            | `true`          |
+
+      | `--absolute`        | Convert all paths to be
+      absolute.                                    | `false`         |
+
+      | `--cwd <dir>`       | Base directory for resolving
+      paths.                                  | `process.cwd()` |
+
+      | `--no-verify`       | **Disable verification**; include paths that don't
+      exist on disk.    | (not set)       |
+
+      | `--copy`            | Copy the final output to the
+      clipboard.                              | `false`         |
+
+      | `--help`, `-h`      | Show this help
+      message.                                              |                 |
+
+      | `--version`, `-v`   | Show the version
+      number.                                             |                 |
+
+      =======
+
+      | Flag                |
+      Description                                                          |
+      Default         |
+
+      | ------------------- |
+      -------------------------------------------------------------------- |
+      --------------- |
+
+      | `--format <format>` | Output format: `json`, `yaml`,
+      `list`.                               | `json`          |
+
+      | `--pretty`          | Pretty-print JSON
+      output.                                            | `true`          |
+
+      | `--absolute`        | Convert all paths to be
+      absolute.                                    | `false`         |
+
+      | `--cwd <dir>`       | Base directory for resolving
+      paths.                                  | `process.cwd()` |
+
+      | `--no-verify`       | **Disable verification**; include paths that don't
+      exist on disk.    | (not set)       |
+
+      | `--copy`/`--no-copy`| Control clipboard. By default, output is copied
+      when piping input. Use `--copy` to force or `--no-copy` to disable. |
+      (smart)   |
+
+      | `--help`, `-h`      | Show this help
+      message.                                              |                 |
+
+      | `--version`, `-v`   | Show the version
+      number.                                             |                 |
+
+      >>>>>>> REPLACE
+    patchStrategy: search-replace
+snapshot:
+  test/e2e/cli.fixtures.yaml: |
+    - name: "should show help text with --help"
+      args: ["--help"]
+      expected_stdout_contains: "Usage:"
+      exit_code: 0
+
+    - name: "should show version with --version"
+      args: ["--version"]
+      expected_stdout_contains: "v" # Will be checked against package.json version
+      exit_code: 0
+
+    - name: "should read from stdin and output pretty json by default"
+      args: ["--strategy", "regex"]
+      stdin: "path is src/index.ts"
+      files:
+        "src/index.ts": ""
+      expected_stdout: |
+        [
+          "src/index.ts"
+        ]
+
+    - name: "should output compact json with --pretty=false"
+      args: ["--pretty=false", "--strategy", "regex"]
+      stdin: "path is src/index.ts"
+      files:
+        "src/index.ts": ""
+      expected_stdout: '["src/index.ts"]'
+
+    - name: "should read from a file argument"
+      args: ["input.log", "--strategy", "regex"]
+      files:
+        "input.log": "path in file is src/index.ts"
+        "src/index.ts": ""
+      expected_stdout: |
+        [
+          "src/index.ts"
+        ]
+
+    - name: "should output yaml with --format yaml"
+      args: ["--format", "yaml", "--strategy", "regex"]
+      stdin: "src/app.js and src/style.css"
+      files:
+        "src/app.js": ""
+        "src/style.css": ""
+      expected_stdout: |
+        - src/app.js
+        - src/style.css
+
+    - name: "should output a list with --format list"
+      args: ["--format", "list", "--strategy", "regex"]
+      stdin: "src/app.js and src/style.css"
+      files:
+        "src/app.js": ""
+        "src/style.css": ""
+      expected_stdout: |
+        src/app.js
+        src/style.css
+
+    - name: "should filter out non-existing files by default"
+      args: ["--format", "list", "--strategy", "regex"]
+      stdin: "good: file1.txt, bad: missing.txt"
+      files:
+        "file1.txt": "content"
+      expected_stdout: "file1.txt"
+
+    - name: "should include non-existing files with --no-verify"
+      args: ["--no-verify", "--format", "list", "--strategy", "regex"]
+      stdin: "good: file1.txt, bad: missing.txt"
+      files:
+        "file1.txt": "content"
+      expected_stdout: |
+        file1.txt
+        missing.txt
+
+    - name: "should make paths absolute with --absolute"
+      args: ["--absolute", "--format", "list", "--no-verify", "--strategy", "regex"]
+      stdin: "relative/path.js"
+      expected_stdout: "{{CWD}}/relative/path.js"
+
+    - name: "should use specified --cwd for absolute paths"
+      args: ["--no-verify", "--absolute", "--format", "list", "--strategy", "regex", "--cwd", "{{CWD}}/fake-root"]
+      stdin: "relative/path.js"
+      files: # create the fake root so it's a valid directory
+        "fake-root/placeholder.txt": ""
+      expected_stdout: "{{CWD}}/fake-root/relative/path.js"
+
+    - name: "should work with --copy flag (output is unchanged)"
+      args: ["--copy", "--format", "list", "--strategy", "regex"]
+      stdin: "src/main.ts"
+      files:
+        "src/main.ts": ""
+      expected_stdout: "src/main.ts"
+
+    - name: "should handle a combination of flags"
+      args: ["data.log", "--absolute", "--format", "yaml", "--strategy", "regex"]
+      stdin: "" # Reading from file
+      files:
+        "data.log": "valid: existing.js, invalid: missing.js"
+        "existing.js": "export {}"
+      expected_stdout: "- {{CWD}}/existing.js"
+
+    - name: "should report error and exit 1 if input file does not exist"
+      args: ["nonexistent.log"]
+      expected_stderr_contains: "Error:"
+      exit_code: 1
+
+    - name: "should produce empty output for no matches"
+      args: ["--format", "list", "--strategy", "regex"]
+      stdin: "no paths here"
+      expected_stdout: ""
+
+    - name: "should handle complex paths from stdin"
+      args: ["--no-verify", "--format", "list", "--strategy", "regex"]
+      stdin: "url.com/path/to/file.js?v=42 and a/b/c.py#L10"
+      files: {}
+      expected_stdout: |
+        /path/to/file.js
+        a/b/c.py
+
+    - name: "should handle quoted paths with spaces from stdin"
+      args: ["--no-verify", "--format", "list", "--strategy", "regex"]
+      stdin: 'Found file in "path with spaces/file.txt"'
+      files: {}
+      expected_stdout: |
+        path with spaces/file.txt
+
+    - name: "should use fuzzy strategy by default"
+      args: ["--format", "list"]
+      stdin: "Just a mention of cli.ts should be enough."
+      files:
+        "src/cli.ts": "content"
+        "README.md": "content"
+      expected_stdout: "src/cli.ts"
+  README.md: >
+    # pathfish 🐠
+
+
+    > **Fuzzy-extract file paths from any blob of text** – Cross-platform CLI &
+    programmatic API for Node.js and Bun.
+
+
+    `pathfish` finds every **relative** or **absolute** file path that appears
+    in text. By default, it **verifies** that each path exists on disk, giving
+    you a clean, reliable list.
+
+
+    ## 🚀 What it does
+
+
+    Drop in compiler logs, linter output, stack traces, Git diffs, or chat logs.
+    `pathfish` intelligently extracts all file paths and returns them in the
+    format you want (JSON, YAML, plain list).
+
+
+    -   ✅ **Verifies paths by default**: Only returns paths that actually exist.
+
+    -   🧠 **Fuzzy matching**: Catches paths with or without extensions, with
+    line/column numbers, and in various formats (Unix, Windows, relative,
+    absolute).
+
+    -   🎨 **Multiple formats**: Output as JSON, YAML, or a simple list.
+
+    -   📋 **Clipboard support**: Instantly copy the output to your clipboard
+    with `--copy`.
+
+    -   🔗 **Chainable**: Designed to be a powerful part of your shell
+    pipelines.
+
+
+    ## 📦 Install
+
+
+    **For CLI usage:**
+
+    ```bash
+
+    # Global CLI (recommended)
+
+    npm install -g pathfish
+
+
+    # Or with Bun
+
+    bun add -g pathfish
+
+    ```
+
+
+    **For programmatic use:**
+
+    ```bash
+
+    # With npm
+
+    npm install pathfish
+
+
+    # With Bun
+
+    bun add pathfish
+
+
+    # With yarn
+
+    yarn add pathfish
+
+
+    # With pnpm
+
+    pnpm add pathfish
+
+    ```
+
+
+    ## 💻 CLI usage
+
+
+    ```bash
+
+    # Read from a file (only shows paths that exist)
+
+    pathfish lint.log
+
+
+    # Read from stdin
+
+    eslint . | pathfish
+
+
+    # Choose an output format
+
+    pathfish --format yaml lint.log
+
+    pathfish --format list lint.log
+
+
+    # Include paths that DON'T exist on disk
+
+    pathfish --no-verify lint.log
+
+
+    # Copy the resulting list to your clipboard
+
+    eslint . | pathfish --copy --format list
+
+
+    # Convert all paths to be absolute
+
+    pathfish --absolute lint.log
+
+
+    # A powerful pipeline: find all paths from TS and ESLint,
+
+    # make them absolute, and copy the list to the clipboard.
+
+    (tsc --noEmit && eslint .) | pathfish --absolute --copy --format list
+
+    ```
+
+
+    ## 🚩 CLI flags
+
+
+    | Flag                |
+    Description                                                          |
+    Default         |
+
+    | ------------------- |
+    -------------------------------------------------------------------- |
+    --------------- |
+
+    | `--format <format>` | Output format: `json`, `yaml`,
+    `list`.                               | `json`          |
+
+    | `--pretty`          | Pretty-print JSON
+    output.                                            | `true`          |
+
+    | `--absolute`        | Convert all paths to be
+    absolute.                                    | `false`         |
+
+    | `--cwd <dir>`       | Base directory for resolving
+    paths.                                  | `process.cwd()` |
+
+    | `--no-verify`       | **Disable verification**; include paths that don't
+    exist on disk.    | (not set)       |
+
+    | `--copy`            | Copy the final output to the
+    clipboard.                              | `false`         |
+
+    | `--help`, `-h`      | Show this help
+    message.                                              |                 |
+
+    | `--version`, `-v`   | Show the version
+    number.                                             |                 |
+
+
+    ## 🛠️ Programmatic API
+
+
+    You can also use `pathfish` as a library in your own projects. Works with
+    both Node.js and Bun!
+
+
+    ```ts
+
+    import { extractPaths, verifyPaths } from 'pathfish';
+
+
+    // For Node.js
+
+    import { readFileSync } from 'fs';
+
+    const raw = readFileSync('tsc.log', 'utf8');
+
+
+    // For Bun
+
+    // const raw = await Bun.file('tsc.log').text();
+
+
+    // 1. Extract all potential path-like strings from text
+
+    const potentialPaths = await extractPaths(raw, {
+      absolute: true,
+      strategy: 'both', // use both regex and fuzzy matching
+      cwd: process.cwd(), // or import.meta.dir for Bun
+    });
+
+
+    // 2. Filter the list to only include paths that exist
+
+    const existingPaths = await verifyPaths(potentialPaths);
+
+
+    console.log(existingPaths);
+
+    // ["/home/user/project/src/components/SettingsScreen.tsx", ...]
+
+    ```
+
+
+    ### API Signature
+
+
+    ```ts
+
+    type Options = {
+      absolute?: boolean; // make every path absolute
+      cwd?: string;       // base for relative→absolute conversion
+      unique?: boolean;   // de-duplicate (default: true)
+      strategy?: 'regex' | 'fuzzy' | 'both'; // (default: 'fuzzy')
+    };
+
+
+    async function extractPaths(text: string, opts?: Options):
+    Promise<string[]>;
+
+
+    async function verifyPaths(paths: string[]): Promise<string[]>; // keeps
+    only existing
+
+    async function copyPathsToClipboard(paths: string[]): Promise<void>; //
+    cross-platform
+
+    ```
+
+
+    *(Note: The main `pathfish` CLI command runs `extractPaths` and
+    `verifyPaths` together by default.)*
+
+
+    ## ✨ Use-cases
+
+
+    1.  **🤖 LLM Context Injection**
+        Pipe linter or compiler output to `pathfish` to get a list of relevant files, then feed their contents into an LLM prompt for more accurate, context-aware responses.
+
+    2.  **⚡ IDE-Agnostic Quick-Open**
+        Pipe any log into `pathfish --copy --format list` and paste the result directly into your editor’s quick-open dialog to instantly open all referenced files.
+
+    3.  **✅ CI Sanity Checks**
+        Fail a CI build if logs reference files that have been moved or deleted.
+        ```bash
+        # Get all paths mentioned in linter output
+        eslint . | pathfish --no-verify --format list > all_paths.txt
+
+        # Get only the paths that actually exist
+        eslint . | pathfish --format list > existing_paths.txt
+
+        # If the files don't match, there's a missing reference. Fail the build.
+        diff all_paths.txt existing_paths.txt && exit 1 || echo "All paths are valid!"
+        ```
+
+    4.  **🎯 Batch Refactoring**
+        Extract every file that triggered an ESLint warning, then run a codemod or script only on that specific list of files.
+        `eslint . | pathfish --format list | xargs your-codemod-script`
+
+    5.  **💬 Chat-Ops**
+        Have a Slack bot receive a stack trace, run `pathfish` on it, and reply with clickable links to the exact files in your repository.
+
+    ## 📜 Examples
+
+
+    ### TypeScript Compiler Output
+
+
+    **Input:**
+
+    ```
+
+    src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is
+    declared but its value is never read.
+
+    src/utils/non-existent.ts:1:1 - error TS2307: Cannot find module './fake'.
+
+    ```
+
+
+    **Command:** `pathfish`
+
+
+    **Output:** (Only `SettingsScreen.tsx` is returned because it exists)
+
+    ```json
+
+    [
+      "src/components/SettingsScreen.tsx"
+    ]
+
+    ```
+
+
+    ### Dockerfile Commands
+
+
+    **Input:**
+
+    ```
+
+    COPY --from=builder /app/dist/server /usr/local/bin/server
+
+    ```
+
+
+    **Command:** `pathfish --no-verify --format list` (using `--no-verify`
+    because paths are in a container)
+
+
+    **Output:**
+
+    ```
+
+    /app/dist/server
+
+    /usr/local/bin/server
+
+    ```
+
+
+    ### ESLint Stylish Output
+
+
+    **Input:**
+
+    ```
+
+    /home/user/project/src/components/Button.tsx
+      108:1  warning  This line has a length of 123  max-len
+    ```
+
+
+    **Command:** `pathfish --format yaml --copy`
+
+
+    **Output:** (and copied to your clipboard)
+
+    ```yaml
+
+    - /home/user/project/src/components/Button.tsx
+
+    ```
+
+
+    ## 🏗️ Development
+
+
+    ```bash
+
+    git clone https://github.com/your-name/pathfish.git
+
+    cd pathfish
+
+
+    # Install dependencies
+
+    npm install
+
+    # or bun install
+
+
+    # Run tests
+
+    npm test
+
+    # or bun test
+
+
+    # Build the project
+
+    npm run build
+
+    # or bun run build
+
+
+    # Lint the code
+
+    npm run lint
+
+
+    # Type check
+
+    npm run typecheck
+
+    ```
+
+
+    ## ✅ Quality Assurance
+
+
+    - **62+ automated tests** covering all core functionality
+
+    - **ESLint** enforced code style
+
+    - **TypeScript** strict mode enabled
+
+    - **Cross-platform** testing (Node.js + Bun)
+
+    - **Zero dependencies** in production (only 3 lightweight dev dependencies)
+
+    - **Comprehensive error handling** with graceful degradation
+
+
+    ## 📄 License
+
+
+    MIT
+  src/cli.ts: |-
+    #!/usr/bin/env node
+
+    import mri from 'mri';
+    import path from 'node:path';
+    import { fileURLToPath } from 'node:url';
+    import { runPipeline, type PipelineOptions, type Strategy } from './engine';
+    import { copyToClipboard, type Format } from './utils';
+    import { readFileSync } from 'node:fs';
+
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    let version = '0.1.6';
+
+    try {
+      // Try to read from package.json in the same directory (for published packages)
+      const { version: pkgVersion } = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
+      version = pkgVersion;
+    } catch {
+      try {
+        // Fallback to parent directory (for development)
+        const { version: pkgVersion } = JSON.parse(readFileSync(path.join(__dirname, '../package.json'), 'utf-8'));
+        version = pkgVersion;
+      } catch {
+        // Ultimate fallback
+        version = '0.1.6';
+      }
+    }
+
+    const HELP_TEXT = `
+    pathfish v${version}
+    Fuzzy-extract file paths from any blob of text.
+
+    Usage:
+      pathfish [file] [options]
+      cat [file] | pathfish [options]
+
+    Options:
+      --strategy <strat> Path extraction strategy: regex, fuzzy, both (default: fuzzy)
+      --format <format>  Output format: json, yaml, list (default: json)
+      --pretty           Pretty-print JSON output (default: true)
+      --absolute         Convert all paths to absolute
+      --cwd <dir>        Base directory for resolving paths (default: process.cwd())
+      --no-verify        Do not filter out paths that do not exist on disk
+      --copy             Copy the final output to the clipboard
+      --help, -h         Show this help message
+      --version, -v      Show version number
+    `;
+
+    type CliArgs = {
+      _: string[];
+      help?: boolean;
+      version?: boolean;
+      pretty?: boolean;
+      absolute?: boolean;
+      verify?: boolean; // mri sets this to false for --no-verify
+      copy?: boolean;
+      format?: string;
+      strategy?: string;
+      cwd?: string;
+    };
+
+
+    /**
+     * Main CLI entry point.
+     * This function orchestrates the entire process from argument parsing to final output.
+     */
+    async function run() {
+      const args: CliArgs = mri(process.argv.slice(2), {
+        boolean: ['help', 'version', 'pretty', 'absolute', 'copy'],
+        string: ['format', 'cwd', 'strategy'],
+        alias: { h: 'help', v: 'version' },
+        default: {
+          pretty: true,
+          format: 'json',
+          strategy: 'fuzzy',
+        },
+      });
+
+      if (args.help) {
+        console.log(HELP_TEXT);
+        return;
+      }
+
+      if (args.version) {
+        console.log(`v${version}`);
+        return;
+      }
+
+      const strategy = args.strategy as Strategy;
+      if (strategy && !['regex', 'fuzzy', 'both'].includes(strategy)) {
+        console.error(
+          `Error: Invalid strategy '${strategy}'. Must be one of: regex, fuzzy, both.`
+        );
+        process.exit(1);
+      }
+      const inputFile = args._[0];
+      let inputText: string;
+
+      try {
+        inputText = inputFile
+          ? readFileSync(path.resolve(args.cwd || process.cwd(), inputFile), 'utf-8')
+          : await new Promise((resolve, reject) => {
+              let data = '';
+              process.stdin.on('data', chunk => data += chunk);
+              process.stdin.on('end', () => resolve(data));
+              process.stdin.on('error', reject);
+            });
+      } catch (err) {
+        throw err;
+      }
+
+      // Map CLI arguments to engine pipeline options.
+      const options: PipelineOptions = {
+        absolute: args.absolute,
+        cwd: args.cwd,
+        verify: args.verify !== false, // Default to true, false only on --no-verify
+        format: args.format as Format,
+        pretty: args.pretty,
+        strategy: strategy,
+      };
+
+      
+      const result = await runPipeline(inputText, options);
+      console.log(result);
+
+      // Copying is a side effect that happens after the result is ready.
+      if (args.copy) await copyToClipboard(result);
+    }
+
+    run().catch(err => {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+      process.stderr.write(`Error: ${errorMessage}\n`);
+      process.exit(1);
+    });
+approved: true
+linesAdded: null
+linesRemoved: null
+linesDifference: null
+gitCommittedAt: null
+status: committed
+id: 46

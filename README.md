@@ -11,7 +11,7 @@ Drop in compiler logs, linter output, stack traces, Git diffs, or chat logs. `pa
 -   ✅ **Verifies paths by default**: Only returns paths that actually exist.
 -   🧠 **Fuzzy matching**: Catches paths with or without extensions, with line/column numbers, and in various formats (Unix, Windows, relative, absolute).
 -   🎨 **Multiple formats**: Output as JSON, YAML, or a simple list.
--   📋 **Clipboard support**: Instantly copy the output to your clipboard with `--copy`.
+-   📋 **Smart clipboard**: Automatically copies output to your clipboard when piping from another command.
 -   🔗 **Chainable**: Designed to be a powerful part of your shell pipelines.
 
 ## 📦 Install
@@ -49,6 +49,8 @@ pathfish lint.log
 # Read from stdin
 eslint . | pathfish
 
+# It's also automatically copied to your clipboard!
+
 # Choose an output format
 pathfish --format yaml lint.log
 pathfish --format list lint.log
@@ -56,15 +58,12 @@ pathfish --format list lint.log
 # Include paths that DON'T exist on disk
 pathfish --no-verify lint.log
 
-# Copy the resulting list to your clipboard
-eslint . | pathfish --copy --format list
-
 # Convert all paths to be absolute
 pathfish --absolute lint.log
 
-# A powerful pipeline: find all paths from TS and ESLint,
-# make them absolute, and copy the list to the clipboard.
-(tsc --noEmit && eslint .) | pathfish --absolute --copy --format list
+# A powerful pipeline: find all paths from TS and ESLint, make them
+# absolute, and copy the list to the clipboard. It's copied by default!
+(tsc --noEmit && eslint .) | pathfish --absolute --format list
 ```
 
 ## 🚩 CLI flags
@@ -76,7 +75,7 @@ pathfish --absolute lint.log
 | `--absolute`        | Convert all paths to be absolute.                                    | `false`         |
 | `--cwd <dir>`       | Base directory for resolving paths.                                  | `process.cwd()` |
 | `--no-verify`       | **Disable verification**; include paths that don't exist on disk.    | (not set)       |
-| `--copy`            | Copy the final output to the clipboard.                              | `false`         |
+| `--copy`/`--no-copy`| Control clipboard. By default, output is copied when piping input. Use `--copy` to force or `--no-copy` to disable. | (smart)   |
 | `--help`, `-h`      | Show this help message.                                              |                 |
 | `--version`, `-v`   | Show the version number.                                             |                 |
 

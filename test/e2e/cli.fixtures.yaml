@@ -130,3 +130,33 @@
     "src/cli.ts": "content"
     "README.md": "content"
   expected_stdout: "src/cli.ts"
+
+- name: "should auto-copy when piping input to a TTY-like output"
+  args: ["--__INTERNAL_TEST_COPY", "--__INTERNAL_STDOUT_IS_TTY", "--format", "list", "--strategy", "regex"]
+  stdin: "src/main.ts" # Piped input -> isStdinTty is false in test env
+  files:
+    "src/main.ts": ""
+  expected_stdout: "src/main.ts"
+  expected_stderr_contains: "__CLIPBOARD_COPY__:src/main.ts"
+
+- name: "should NOT auto-copy with --no-copy even with piped input"
+  args: ["--no-copy", "--__INTERNAL_TEST_COPY", "--__INTERNAL_STDOUT_IS_TTY", "--format", "list", "--strategy", "regex"]
+  stdin: "src/main.ts"
+  files:
+    "src/main.ts": ""
+  expected_stdout: "src/main.ts"
+
+- name: "should NOT auto-copy when input is from TTY (interactive)"
+  args: ["--__INTERNAL_TEST_COPY", "--__INTERNAL_STDOUT_IS_TTY", "--__INTERNAL_STDIN_IS_TTY", "--format", "list", "--strategy", "regex"]
+  stdin: "src/main.ts" # Stdin is still provided to avoid hanging, but flag forces isStdinTty to true
+  files:
+    "src/main.ts": ""
+  expected_stdout: "src/main.ts"
+
+- name: "should force copy with --copy even when input is from TTY"
+  args: ["--copy", "--__INTERNAL_TEST_COPY", "--__INTERNAL_STDOUT_IS_TTY", "--__INTERNAL_STDIN_IS_TTY", "--format", "list", "--strategy", "regex"]
+  stdin: "src/main.ts"
+  files:
+    "src/main.ts": ""
+  expected_stdout: "src/main.ts"
+  expected_stderr_contains: "__CLIPBOARD_COPY__:src/main.ts"

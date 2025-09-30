@@ -210,59 +210,6 @@ export async function copyToClipboard(text: string): Promise<void> {
 }
 ````
 
-## File: test/unit/utils.test.ts
-````typescript
-import { describe, it, expect } from 'bun:test';
-import { createFormatter, type Format } from '../../dist/utils.js';
-import { loadYamlFixture } from '../test.utils';
-
-type FormatterTestCase = {
-  name: string;
-  format: Format;
-  pretty: boolean;
-  input: string[];
-  expected: string;
-};
-
-type FormatterFixture = (
-  | FormatterTestCase
-  | { name: string; cases: FormatterTestCase[] }
-)[];
-
-describe('createFormatter', async () => {
-  it('should throw an error for an unknown format', () => {
-    // This is a type-level check, but we test the runtime guard
-    const badFormat = 'xml' as unknown as Format;
-    expect(() => createFormatter(badFormat, true)).toThrow(
-      'Unknown format: xml',
-    );
-  });
-
-  const fixtures = await loadYamlFixture<FormatterFixture>('unit/utils.fixtures.yaml');
-
-  for (const fixture of fixtures) {
-    if ('cases' in fixture) {
-      describe(fixture.name, () => {
-        for (const testCase of fixture.cases) {
-          it(`should format as ${testCase.format}`, () => {
-            const format = createFormatter(testCase.format, testCase.pretty);
-            const result = format(testCase.input);
-            expect(result.trim()).toEqual(testCase.expected.trim());
-          });
-        }
-      });
-    } else {
-      it(fixture.name, () => {
-        const format = createFormatter(fixture.format, fixture.pretty);
-        const result = format(fixture.input);
-        // Use trim to handle potential trailing newlines from YAML multiline strings
-        expect(result.trim()).toEqual(fixture.expected.trim());
-      });
-    }
-  }
-});
-````
-
 ## File: tsconfig.json
 ````json
 {
@@ -432,6 +379,89 @@ describe('createFormatter', async () => {
     "src/cli.ts": "content"
     "README.md": "content"
   expected_stdout: "src/cli.ts"
+
+- name: "should auto-copy when piping input to a TTY-like output"
+  args: ["--__INTERNAL_TEST_COPY", "--__INTERNAL_STDOUT_IS_TTY", "--format", "list", "--strategy", "regex"]
+  stdin: "src/main.ts" # Piped input -> isStdinTty is false in test env
+  files:
+    "src/main.ts": ""
+  expected_stdout: "src/main.ts"
+  expected_stderr_contains: "__CLIPBOARD_COPY__:src/main.ts"
+
+- name: "should NOT auto-copy with --no-copy even with piped input"
+  args: ["--no-copy", "--__INTERNAL_TEST_COPY", "--__INTERNAL_STDOUT_IS_TTY", "--format", "list", "--strategy", "regex"]
+  stdin: "src/main.ts"
+  files:
+    "src/main.ts": ""
+  expected_stdout: "src/main.ts"
+
+- name: "should NOT auto-copy when input is from TTY (interactive)"
+  args: ["--__INTERNAL_TEST_COPY", "--__INTERNAL_STDOUT_IS_TTY", "--__INTERNAL_STDIN_IS_TTY", "--format", "list", "--strategy", "regex"]
+  stdin: "src/main.ts" # Stdin is still provided to avoid hanging, but flag forces isStdinTty to true
+  files:
+    "src/main.ts": ""
+  expected_stdout: "src/main.ts"
+
+- name: "should force copy with --copy even when input is from TTY"
+  args: ["--copy", "--__INTERNAL_TEST_COPY", "--__INTERNAL_STDOUT_IS_TTY", "--__INTERNAL_STDIN_IS_TTY", "--format", "list", "--strategy", "regex"]
+  stdin: "src/main.ts"
+  files:
+    "src/main.ts": ""
+  expected_stdout: "src/main.ts"
+  expected_stderr_contains: "__CLIPBOARD_COPY__:src/main.ts"
+````
+
+## File: test/unit/utils.test.ts
+````typescript
+import { describe, it, expect } from 'bun:test';
+import { createFormatter, type Format } from '../../src/utils';
+import { loadYamlFixture } from '../test.utils';
+
+type FormatterTestCase = {
+  name: string;
+  format: Format;
+  pretty: boolean;
+  input: string[];
+  expected: string;
+};
+
+type FormatterFixture = (
+  | FormatterTestCase
+  | { name: string; cases: FormatterTestCase[] }
+)[];
+
+describe('createFormatter', async () => {
+  it('should throw an error for an unknown format', () => {
+    // This is a type-level check, but we test the runtime guard
+    const badFormat = 'xml' as unknown as Format;
+    expect(() => createFormatter(badFormat, true)).toThrow(
+      'Unknown format: xml',
+    );
+  });
+
+  const fixtures = await loadYamlFixture<FormatterFixture>('unit/utils.fixtures.yaml');
+
+  for (const fixture of fixtures) {
+    if ('cases' in fixture) {
+      describe(fixture.name, () => {
+        for (const testCase of fixture.cases) {
+          it(`should format as ${testCase.format}`, () => {
+            const format = createFormatter(testCase.format, testCase.pretty);
+            const result = format(testCase.input);
+            expect(result.trim()).toEqual(testCase.expected.trim());
+          });
+        }
+      });
+    } else {
+      it(fixture.name, () => {
+        const format = createFormatter(fixture.format, fixture.pretty);
+        const result = format(fixture.input);
+        // Use trim to handle potential trailing newlines from YAML multiline strings
+        expect(result.trim()).toEqual(fixture.expected.trim());
+      });
+    }
+  }
+});
 ````
 
 ## File: test/test.utils.ts
@@ -527,7 +557,7 @@ Drop in compiler logs, linter output, stack traces, Git diffs, or chat logs. `pa
 -   ✅ **Verifies paths by default**: Only returns paths that actually exist.
 -   🧠 **Fuzzy matching**: Catches paths with or without extensions, with line/column numbers, and in various formats (Unix, Windows, relative, absolute).
 -   🎨 **Multiple formats**: Output as JSON, YAML, or a simple list.
--   📋 **Clipboard support**: Instantly copy the output to your clipboard with `--copy`.
+-   📋 **Smart clipboard**: Automatically copies output to your clipboard when piping from another command.
 -   🔗 **Chainable**: Designed to be a powerful part of your shell pipelines.
 
 ## 📦 Install
@@ -565,6 +595,8 @@ pathfish lint.log
 # Read from stdin
 eslint . | pathfish
 
+# It's also automatically copied to your clipboard!
+
 # Choose an output format
 pathfish --format yaml lint.log
 pathfish --format list lint.log
@@ -572,15 +604,12 @@ pathfish --format list lint.log
 # Include paths that DON'T exist on disk
 pathfish --no-verify lint.log
 
-# Copy the resulting list to your clipboard
-eslint . | pathfish --copy --format list
-
 # Convert all paths to be absolute
 pathfish --absolute lint.log
 
-# A powerful pipeline: find all paths from TS and ESLint,
-# make them absolute, and copy the list to the clipboard.
-(tsc --noEmit && eslint .) | pathfish --absolute --copy --format list
+# A powerful pipeline: find all paths from TS and ESLint, make them
+# absolute, and copy the list to the clipboard. It's copied by default!
+(tsc --noEmit && eslint .) | pathfish --absolute --format list
 ```
 
 ## 🚩 CLI flags
@@ -592,7 +621,7 @@ pathfish --absolute lint.log
 | `--absolute`        | Convert all paths to be absolute.                                    | `false`         |
 | `--cwd <dir>`       | Base directory for resolving paths.                                  | `process.cwd()` |
 | `--no-verify`       | **Disable verification**; include paths that don't exist on disk.    | (not set)       |
-| `--copy`            | Copy the final output to the clipboard.                              | `false`         |
+| `--copy`/`--no-copy`| Control clipboard. By default, output is copied when piping input. Use `--copy` to force or `--no-copy` to disable. | (smart)   |
 | `--help`, `-h`      | Show this help message.                                              |                 |
 | `--version`, `-v`   | Show the version number.                                             |                 |
 
@@ -976,7 +1005,7 @@ describe('cli.ts (E2E)', async () => {
 ## File: test/integration/engine.test.ts
 ````typescript
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { runPipeline, type PipelineOptions } from '../../dist/engine.js';
+import { runPipeline, type PipelineOptions } from '../../src/engine';
 import {
   loadYamlFixture,
   setupTestDirectory,
@@ -1027,132 +1056,6 @@ describe('engine.ts (Integration)', async () => {
           }
         });
       });
-    });
-  });
-});
-````
-
-## File: test/unit/core.test.ts
-````typescript
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import path from 'node:path';
-import { extractPaths, verifyPaths, type Options, type Strategy } from '../../dist/core.js';
-import {
-  loadYamlFixture,
-  setupTestDirectory,
-  cleanupTestDirectory,
-} from '../test.utils';
-
-type ExtractPathsTestCase = {
-  name: string;
-  options: Options;
-  input: string;
-  files?: { [path: string]: string };
-  expected?: string[];
-  expected_by_strategy?: {
-    [S in Strategy]?: string[];
-  };
-};
-
-describe('core.ts', () => {
-  describe('extractPaths', async () => {
-    const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
-
-    for (const { name, options, input, files, expected, expected_by_strategy } of fixtures) {
-      if (expected_by_strategy) {
-        describe(name, () => {
-          for (const [strategy, expectedOutput] of Object.entries(
-            expected_by_strategy,
-          )) {
-            if (!expectedOutput) continue;
-            it(`with strategy: ${strategy}`, async () => {
-              let tempDir: string | undefined;
-              let cwd = options.cwd || process.cwd();
-              if (files && Object.keys(files).length > 0) {
-                tempDir = await setupTestDirectory(files);
-                cwd = tempDir;
-              }
-
-              const result = await extractPaths(input, {
-                ...options,
-                cwd,
-                strategy: strategy as Strategy,
-              });
-              // Sort for stable comparison
-              expect(result.sort()).toEqual(expectedOutput.sort());
-
-              if (tempDir) {
-                await cleanupTestDirectory(tempDir);
-              }
-            });
-          }
-        });
-      } else {
-        it(name, async () => {
-          let tempDir: string | undefined;
-          let cwd = options.cwd || process.cwd();
-          if (files && Object.keys(files).length > 0) {
-            tempDir = await setupTestDirectory(files);
-            cwd = tempDir;
-          }
-
-          const result = await extractPaths(input, { ...options, cwd });
-          // Sort for stable comparison
-          expect(result.sort()).toEqual((expected ?? []).sort());
-
-          if (tempDir) {
-            await cleanupTestDirectory(tempDir);
-          }
-        });
-      }
-    }
-  });
-
-  describe('verifyPaths', () => {
-    let tempDir: string;
-    const testFiles = {
-      'file1.txt': 'hello',
-      'dir/file2.js': 'content',
-      'dir/subdir/file3.json': '{}',
-    };
-
-    beforeEach(async () => {
-      tempDir = await setupTestDirectory(testFiles);
-    });
-
-    afterEach(async () => {
-      await cleanupTestDirectory(tempDir);
-    });
-
-    it('should return only paths that exist on disk', async () => {
-      const pathsToCheck = [
-        path.join(tempDir, 'file1.txt'), // exists
-        path.join(tempDir, 'dir/file2.js'), // exists
-        path.join(tempDir, 'non-existent.txt'), // does not exist
-        path.join(tempDir, 'dir/subdir/another.json'), // does not exist
-      ];
-
-      const expected = [
-        path.join(tempDir, 'file1.txt'),
-        path.join(tempDir, 'dir/file2.js'),
-      ];
-
-      const result = await verifyPaths(pathsToCheck, tempDir);
-      expect(result.sort()).toEqual(expected.sort());
-    });
-
-    it('should return an empty array if no paths exist', async () => {
-      const pathsToCheck = [
-        path.join(tempDir, 'foo.txt'),
-        path.join(tempDir, 'bar.js'),
-      ];
-      const result = await verifyPaths(pathsToCheck, tempDir);
-      expect(result).toEqual([]);
-    });
-
-    it('should return an empty array for empty input', async () => {
-      const result = await verifyPaths([], tempDir);
-      expect(result).toEqual([]);
     });
   });
 });
@@ -1428,6 +1331,132 @@ describe('core.ts', () => {
     - "src/services/fs.service.ts"
 ````
 
+## File: test/unit/core.test.ts
+````typescript
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import path from 'node:path';
+import { extractPaths, verifyPaths, type Options, type Strategy } from '../../src/core';
+import {
+  loadYamlFixture,
+  setupTestDirectory,
+  cleanupTestDirectory,
+} from '../test.utils';
+
+type ExtractPathsTestCase = {
+  name: string;
+  options: Options;
+  input: string;
+  files?: { [path: string]: string };
+  expected?: string[];
+  expected_by_strategy?: {
+    [S in Strategy]?: string[];
+  };
+};
+
+describe('core.ts', () => {
+  describe('extractPaths', async () => {
+    const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
+
+    for (const { name, options, input, files, expected, expected_by_strategy } of fixtures) {
+      if (expected_by_strategy) {
+        describe(name, () => {
+          for (const [strategy, expectedOutput] of Object.entries(
+            expected_by_strategy,
+          )) {
+            if (!expectedOutput) continue;
+            it(`with strategy: ${strategy}`, async () => {
+              let tempDir: string | undefined;
+              let cwd = options.cwd || process.cwd();
+              if (files && Object.keys(files).length > 0) {
+                tempDir = await setupTestDirectory(files);
+                cwd = tempDir;
+              }
+
+              const result = await extractPaths(input, {
+                ...options,
+                cwd,
+                strategy: strategy as Strategy,
+              });
+              // Sort for stable comparison
+              expect(result.sort()).toEqual(expectedOutput.sort());
+
+              if (tempDir) {
+                await cleanupTestDirectory(tempDir);
+              }
+            });
+          }
+        });
+      } else {
+        it(name, async () => {
+          let tempDir: string | undefined;
+          let cwd = options.cwd || process.cwd();
+          if (files && Object.keys(files).length > 0) {
+            tempDir = await setupTestDirectory(files);
+            cwd = tempDir;
+          }
+
+          const result = await extractPaths(input, { ...options, cwd });
+          // Sort for stable comparison
+          expect(result.sort()).toEqual((expected ?? []).sort());
+
+          if (tempDir) {
+            await cleanupTestDirectory(tempDir);
+          }
+        });
+      }
+    }
+  });
+
+  describe('verifyPaths', () => {
+    let tempDir: string;
+    const testFiles = {
+      'file1.txt': 'hello',
+      'dir/file2.js': 'content',
+      'dir/subdir/file3.json': '{}',
+    };
+
+    beforeEach(async () => {
+      tempDir = await setupTestDirectory(testFiles);
+    });
+
+    afterEach(async () => {
+      await cleanupTestDirectory(tempDir);
+    });
+
+    it('should return only paths that exist on disk', async () => {
+      const pathsToCheck = [
+        path.join(tempDir, 'file1.txt'), // exists
+        path.join(tempDir, 'dir/file2.js'), // exists
+        path.join(tempDir, 'non-existent.txt'), // does not exist
+        path.join(tempDir, 'dir/subdir/another.json'), // does not exist
+      ];
+
+      const expected = [
+        path.join(tempDir, 'file1.txt'),
+        path.join(tempDir, 'dir/file2.js'),
+      ];
+
+      const result = await verifyPaths(pathsToCheck, tempDir);
+      expect(result.sort()).toEqual(expected.sort());
+    });
+
+    it('should return an empty array if no paths exist', async () => {
+      const pathsToCheck = [
+        path.join(tempDir, 'foo.txt'),
+        path.join(tempDir, 'bar.js'),
+      ];
+      const result = await verifyPaths(pathsToCheck, tempDir);
+      expect(result).toEqual([]);
+    });
+
+    it('should return an empty array for empty input', async () => {
+      const result = await verifyPaths([], tempDir);
+      expect(result).toEqual([]);
+    });
+  });
+});
+````
+
 ## File: src/cli.ts
 ````typescript
 #!/usr/bin/env node
@@ -1465,6 +1494,9 @@ Usage:
   pathfish [file] [options]
   cat [file] | pathfish [options]
 
+By default, pathfish will automatically copy its output to your clipboard
+when you pipe input to it (e.g., \`git status | pathfish\`).
+
 Options:
   --strategy <strat> Path extraction strategy: regex, fuzzy, both (default: fuzzy)
   --format <format>  Output format: json, yaml, list (default: json)
@@ -1472,7 +1504,8 @@ Options:
   --absolute         Convert all paths to absolute
   --cwd <dir>        Base directory for resolving paths (default: process.cwd())
   --no-verify        Do not filter out paths that do not exist on disk
-  --copy             Copy the final output to the clipboard
+  --copy             Force copying the output to the clipboard
+  --no-copy          Disable copying output to the clipboard
   --help, -h         Show this help message
   --version, -v      Show version number
 `;
@@ -1488,6 +1521,9 @@ type CliArgs = {
   format?: string;
   strategy?: string;
   cwd?: string;
+  '__INTERNAL_TEST_COPY'?: boolean;
+  '__INTERNAL_STDOUT_IS_TTY'?: boolean;
+  '__INTERNAL_STDIN_IS_TTY'?: boolean;
 };
 
 
@@ -1497,7 +1533,16 @@ type CliArgs = {
  */
 async function run() {
   const args: CliArgs = mri(process.argv.slice(2), {
-    boolean: ['help', 'version', 'pretty', 'absolute', 'copy'],
+    boolean: [
+      'help',
+      'version',
+      'pretty',
+      'absolute',
+      'copy',
+      '__INTERNAL_TEST_COPY',
+      '__INTERNAL_STDOUT_IS_TTY',
+      '__INTERNAL_STDIN_IS_TTY',
+    ],
     string: ['format', 'cwd', 'strategy'],
     alias: { h: 'help', v: 'version' },
     default: {
@@ -1527,6 +1572,16 @@ async function run() {
   const inputFile = args._[0];
   let inputText: string;
 
+  // Determine TTY status, allowing overrides for testing
+  const isStdoutTty = args['__INTERNAL_STDOUT_IS_TTY'] ?? process.stdout.isTTY;
+  const isStdinTty = args['__INTERNAL_STDIN_IS_TTY'] ?? process.stdin.isTTY;
+
+  // Input is considered "piped" if we are reading from stdin and it's not a TTY.
+  const isPipedInput = !inputFile && !isStdinTty;
+
+  // Smart copy logic: copy if forced, or if piping input to an interactive terminal
+  const wantsCopy =
+    args.copy === true || (args.copy !== false && isPipedInput && isStdoutTty);
   try {
     inputText = inputFile
       ? readFileSync(path.resolve(args.cwd || process.cwd(), inputFile), 'utf-8')
@@ -1550,12 +1605,18 @@ async function run() {
     strategy: strategy,
   };
 
-  
   const result = await runPipeline(inputText, options);
   console.log(result);
 
   // Copying is a side effect that happens after the result is ready.
-  if (args.copy) await copyToClipboard(result);
+  if (wantsCopy) {
+    if (args['__INTERNAL_TEST_COPY']) {
+      // Use a distinct format to avoid accidental matches in test stderr
+      process.stderr.write(`__CLIPBOARD_COPY__:${result}`);
+    } else {
+      await copyToClipboard(result);
+    }
+  }
 }
 
 run().catch(err => {
@@ -1569,7 +1630,7 @@ run().catch(err => {
 ````json
 {
   "name": "pathfish",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "main": "dist/index.js",
   "module": "dist/index.js",
   "type": "module",
@@ -1773,7 +1834,7 @@ async function extractPathsWithFuzzy(text: string, cwd: string): Promise<string[
         const charBefore = text[match.index - 1];
         // Avoid matching a basename that is part of a larger filename
         // e.g. matching 'types.ts' inside 'domain.types.ts'
-        if (/[\w.-]/.test(charBefore)) {
+          if (charBefore && /[\w.-]/.test(charBefore)) {
           continue;
         }
       }

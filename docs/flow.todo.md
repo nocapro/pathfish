@@ -1,3 +1,22 @@
+multi-file input
+
+=== DONE
+
+propose the awesome the terminal UI UX screens using ascii as concepts... pretend that you are ink react terminal... now give all screens and states proposal... I want the UI to be
+
+1. no border on left right side.
+2. no need color code.
+3. I like icons
+4. stateful
+5. useful stats and elapsed time, especially on waiting script commands
+6. cool animations
+7. user able to copy the result, command output or both.
+8. file watch feature which auto copy to clipboard on change
+9. user able to cancel currently running stdin if he think too long
+10. user can see raw input on pressing certain key
+
+=== DONE
+
 the fuzzy strategy should also matching the path after the file name+ext.
 
 also reproduce the issue trough test cases for guardrails the implementation
@@ -30,7 +49,7 @@ realme-book@realme-book:~/Project/code/relaycode-new$ echo " - 'src/services/con
 realme-book@realme-book:~/Project/code/relaycode-new$ pathfish -v
 v0.1.9
 
-===
+=== DONE
 
 auto copy to clipboard the result
 
