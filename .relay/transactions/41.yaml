@@ -1,0 +1,785 @@
+uuid: 139e8023-deea-47c3-a3d8-5cd83c4b18c5
+projectId: pathfish
+createdAt: '2025-09-30T01:21:02.337Z'
+gitCommitMsg: >-
+  fix(regex): Prevent standalone file regex from matching directories
+
+  The regex for matching standalone filenames (e.g., `README.md`) was too
+  greedy. It would incorrectly match directory names containing a dot (e.g.,
+  `relaycode.old` in `relaycode.old/src/core.ts`), preventing the full path from
+  being extracted.
+
+  This commit adds a negative lookahead `(?![\\\/])` to the standalone file
+  regex. This ensures it does not match if the potential filename is immediately
+  followed by a path separator, correctly identifying it as part of a larger
+  path.
+
+  A new unit test case has been added to verify this fix and prevent
+  regressions.
+promptSummary: >-
+  The user wants to fix a bug in the regex path extraction strategy where paths
+  containing dots in directory names are not correctly identified.
+reasoning:
+  - >-
+    Based on your request, I've identified and fixed the issue where paths with
+    dots in directory names were not being correctly extracted. Here are the
+    changes:
+  - '### Reasoning'
+  - >-
+    1.  **The Problem**: The issue stemmed from a regex component in
+    `src/core.ts` intended to find standalone filenames (like `README.md`). This
+    regex was overly greedy and would incorrectly match a directory name
+    containing a dot (like `relaycode.old`) as a complete file. This partial
+    match prevented the correct regex component from matching the full path
+    (e.g., `'relaycode.old/src/core/config.ts'`).
+  - >-
+    2.  **The Fix**: I've modified the "standalone filename" regex in
+    `src/core.ts`. I added a negative lookahead `(?![\\\/])` to it. This small
+    addition ensures that this part of the regex only matches patterns that look
+    like files if they are *not* immediately followed by a path separator (`/`
+    or `\`). This prevents it from matching directory names while still
+    correctly identifying actual standalone files.
+  - >-
+    3.  **Verification**: To ensure the fix works as expected and to prevent
+    future regressions, I've added a new test case to
+    `test/unit/core.fixtures.yaml`. This new test specifically validates the
+    extraction of paths from an input containing directory names with dots,
+    mirroring the scenario you described.
+  - '### Code Changes'
+  - I'll start by modifying the core logic to fix the regular expression.
+  - >-
+    Next, I'll add a new test case to the unit test fixtures to validate the
+    fix.
+  - These changes should resolve the issue you encountered.
+operations:
+  - type: write
+    path: src/core.ts
+    content: >+
+      --- src/core.ts
+
+      +++ src/core.ts
+
+      @@ -83,7 +83,7 @@
+           // Standalone filenames with extensions: file.txt, README.md, my.component.test.js.
+           // Use negative lookbehind to avoid email domains and URL contexts
+           // Supports multi-dot filenames like my.component.test.js
+      -   
+      /(?<!@|https?:\/\/[^\s]*)\b[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,}\b(?!\s*@)(?![^"]*")/.source,
+
+      +   
+      /(?<!@|https?:\/\/[^\s]*)\b[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,}\b(?![\\\/])(?!\s*@)(?![^"]*")/.source,
+       
+           // Common filenames without extensions
+           /\b(?:Dockerfile|Makefile|Jenkinsfile|Vagrantfile)\b/.source,
+
+    patchStrategy: standard-diff
+  - type: write
+    path: test/unit/core.fixtures.yaml
+    content: |+
+      --- test/unit/core.fixtures.yaml
+      +++ test/unit/core.fixtures.yaml
+      @@ -282,3 +282,15 @@
+           - "file1.txt"
+           - "file2.log"
+           - "path/to/file3.json"
+      +- name: "should extract paths with dots in directory names"
+      +  options: { strategy: 'regex' }
+      +  input: |
+      +    - 'src/services/config.service.ts'
+      +    - 'relaycode.old/src/core/config.ts'
+      +    - 'relaycode.old/src/core/state.ts'
+      +    - 'index.tsx'
+      +  expected:
+      +    - "src/services/config.service.ts"
+      +    - "relaycode.old/src/core/config.ts"
+      +    - "relaycode.old/src/core/state.ts"
+      +    - "index.tsx"
+
+    patchStrategy: standard-diff
+snapshot:
+  test/unit/core.fixtures.yaml: |
+    - name: "Basic path extraction"
+      options: { strategy: 'regex' }
+      input: |
+        Here are some files: src/core.ts and ./README.md
+        Also, a log file /var/log/syslog
+      expected:
+        - "src/core.ts"
+        - "./README.md"
+        - "/var/log/syslog"
+
+    - name: "Windows path extraction"
+      options: { strategy: 'regex' }
+      input: |
+        Error in C:\\Users\\Test\\project\\src\\file.js
+        Check the config at .\\config\\settings.json
+      expected:
+        - "C:\\Users\\Test\\project\\src\\file.js"
+        - ".\\config\\settings.json"
+
+    - name: "Path extraction with line and column numbers"
+      options: { strategy: 'regex' }
+      input: |
+        src/components/Button.tsx:5:10 - error
+        dist/bundle.js:1:12345
+        /app/main.py:42
+      expected:
+        - "src/components/Button.tsx"
+        - "/app/main.py"
+
+    - name: "Standalone filenames with extensions"
+      options: { strategy: 'regex' }
+      input: |
+        The project uses bun.lockb and has a README.md.
+        But this is: package.json
+      expected:
+        - "README.md"
+        - "package.json"
+
+    - name: "Unique paths option (default)"
+      options: { unique: true, strategy: 'regex' }
+      input: "See src/core.ts and again src/core.ts"
+      expected: ["src/core.ts"]
+
+    - name: "Non-unique paths option"
+      options: { unique: false, strategy: 'regex' }
+      input: "See src/core.ts and again src/core.ts"
+      expected: ["src/core.ts", "src/core.ts"]
+
+    - name: "Absolute paths option"
+      options: { absolute: true, cwd: "/home/user/project", strategy: 'regex' }
+      input: |
+        Relative path: src/index.ts
+        Dot-slash path: ./dist/main.js
+        Absolute path is unchanged: /etc/hosts
+      expected:
+        - "/home/user/project/src/index.ts"
+        - "/etc/hosts"
+
+    - name: "Empty input"
+      options: { strategy: 'regex' }
+      input: "No paths here."
+      expected: []
+
+    - name: "Should ignore common transient/generated directories"
+      options: { strategy: 'regex' }
+      input: |
+        Path in node_modules/package/file.js
+        Path in .git/hooks/pre-commit
+        Path in dist/bundle.js
+        Path in project/build/output.css
+        A file called distribution/file.js should not be ignored.
+      expected:
+        - "distribution/file.js"
+
+    - name: "Should ignore common lockfiles"
+      options: { strategy: 'regex' }
+      input: |
+        This project uses bun.lockb and package-lock.json.
+        But this is fine: my-package.json
+      expected:
+        - "my-package.json"
+
+    - name: "Paths with special characters and surrounding punctuation"
+      options: { strategy: 'regex' }
+      input: |
+        Paths can be tricky: (src/components/Button (new).tsx),
+        <[dist/app-v2.js]>, or even "quoted/path.css".
+        A path with a number in extension: file.v2.js
+      expected:
+        - "src/components/Button (new).tsx"
+        - "quoted/path.css"
+        - "file.v2.js"
+
+    - name: "Should extract common files without extensions"
+      options: { strategy: 'regex' }
+      input: "Check the Dockerfile and also the Makefile for build instructions."
+      expected:
+        - "Dockerfile"
+        - "Makefile"
+
+    - name: "Should avoid matching domains from emails and URLs"
+      options: { strategy: 'regex' }
+      input: |
+        Contact me at user@domain.com.
+        Check the website http://example.org/index.html and also https://another.com.
+        A file share: //server/file.txt
+        But this should be found: a/b/c.com
+      expected:
+        - "/index.html"
+        - "a/b/c.com"
+        - "/server/file.txt"
+
+    - name: "Advanced path extraction with complex cases"
+      options: { strategy: 'regex' }
+      input: |
+        Quoted path: "src/app/main.css"
+        Path with query string: /assets/style.css?v=1.2
+        Path with fragment: /images/pic.jpg#fragment
+        Path in URL: https://example.com/some/path/to/resource.json
+        File with multiple dots: my.component.test.js and another.is.here.md
+        Path with unicode: src/för/måin.ts
+        Path next to text: file.txt,but notthispart.
+        Not a file: user@domain.com, nothing to see.
+        But this is a file: a/b/c.io
+      expected:
+        - "src/app/main.css"
+        - "/assets/style.css"
+        - "/images/pic.jpg"
+        - "/some/path/to/resource.json"
+        - "my.component.test.js"
+        - "another.is.here.md"
+        - "src/för/måin.ts"
+        - "file.txt"
+        - "a/b/c.io"
+
+    - name: "Quoted paths with spaces"
+      options: { strategy: 'regex' }
+      input: |
+        Error in "/path with spaces/file.js" and also in 'another path/with spaces.ts'.
+      expected:
+        - "/path with spaces/file.js"
+        - "another path/with spaces.ts"
+
+    - name: "Paths with scoped npm packages"
+      options: { strategy: 'regex' }
+      input: 'Requires "@scoped/package/index.js" and also regular ''package/main.js'''
+      expected:
+        - "@scoped/package/index.js"
+        - "package/main.js"
+
+    - name: "Paths with tilde"
+      options: { strategy: 'regex' }
+      input: "Check ~/documents/report.docx."
+      expected:
+        - "~/documents/report.docx"
+
+    - name: "Complex relative paths with parent selectors"
+      options: { strategy: 'regex' }
+      input: "Path is ../../src/app/../core/utils.ts"
+      expected:
+        - "../../src/app/../core/utils.ts"
+
+    - name: "Windows UNC paths"
+      options: { strategy: 'regex' }
+      input: "Data at \\\\network-share\\folder\\data.csv and //another/share"
+      expected:
+        - "\\\\network-share\\folder\\data.csv"
+        - "//another/share"
+
+    - name: "Should avoid matching version numbers"
+      options: { strategy: 'regex' }
+      input: "Release v3.4.5 is out. See also file-1.2.3.log"
+      expected:
+        - "file-1.2.3.log"
+
+    - name: "Should avoid matching UUIDs and commit hashes"
+      options: { strategy: 'regex' }
+      input: "Error ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890, commit: f0e9d8c7. see file.log"
+      expected:
+        - "file.log"
+
+    - name: "Paths inside URLs with ports"
+      options: { strategy: 'regex' }
+      input: "Asset is at http://localhost:8080/assets/img/logo.png. And another at just /path/to/file.js"
+      expected:
+        - "/assets/img/logo.png"
+        - "/path/to/file.js"
+
+    - name: "Paths with mixed slashes"
+      options: { strategy: 'regex' }
+      input: "A strange path: src/mix\\slash/component.tsx"
+      expected:
+        - "src/mix\\slash/component.tsx"
+
+    - name: "Paths with multiple parent selectors"
+      options: { strategy: 'regex' }
+      input: "Go way up with ../../../../../etc/passwd"
+      expected:
+        - "../../../../../etc/passwd"
+
+    - name: "Paths adjacent to brackets and commas"
+      options: { strategy: 'regex' }
+      input: "Files are [file1.txt], (file2.log), and {path/to/file3.json}."
+      expected:
+        - "file1.txt"
+        - "file2.log"
+        - "path/to/file3.json"
+    - name: "Should extract paths from TypeScript compiler error output"
+      options: { strategy: 'regex' }
+      input: |
+        src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
+
+        5 import { AI_PROVIDERS, SETTINGS_FOOTER_ACTIONS } from '../constants/settings.constants';
+                   ~~~~~~~~~~~~
+
+        src/hooks/useDebugMenu.tsx:101:29 - error TS2554: Expected 4 arguments, but got 3.
+
+        101                 initActions.setAnalysisResults('relaycode-tui', true, false);
+                                        ~~~~~~~~~~~~~~~~~~
+
+          src/stores/init.store.ts:30:99
+            30         setAnalysisResults: (projectId: string, gitignoreFound: boolean, gitInitialized: boolean, configExists: boolean) => void;
+                                                                                                                 ~~~~~~~~~~~~~~~~~~~~~
+            An argument for 'configExists' was not provided.
+
+        src/services/copy.service.ts:5:10 - error TS2305: Module '"./fs.service"' has no exported member 'FileSystemService'.
+
+        5 import { FileSystemService } from './fs.service';
+                   ~~~~~~~~~~~~~~~~~
+
+        src/services/init.service.ts:10:32 - error TS2305: Module '"../constants/fs.constants"' has no exported member 'PROMPT_FILE_NAME'.
+
+        10 import { STATE_DIRECTORY_NAME, PROMPT_FILE_NAME } from '../constants/fs.constants';
+                                          ~~~~~~~~~~~~~~~~
+
+        src/services/init.service.ts:20:25 - error TS2554: Expected 1 arguments, but got 0.
+
+        20         await FsService.updateGitignore();
+                                   ~~~~~~~~~~~~~~~
+
+          src/services/fs.service.ts:42:32
+            42 const updateGitignore = async (cwd: string): Promise<{ created: boolean, updated: boolean }> => {
+                                              ~~~~~~~~~~~
+            An argument for 'cwd' was not provided.
+
+
+        Found 5 errors.
+      expected:
+        - "src/components/SettingsScreen.tsx"
+        - "src/hooks/useDebugMenu.tsx"
+        - "src/stores/init.store.ts"
+        - "src/services/copy.service.ts"
+        - "src/services/init.service.ts"
+        - "src/services/fs.service.ts"
+  src/core.ts: >-
+    import path from 'node:path';
+
+    import { promises as fs } from 'node:fs';
+
+
+    export type Strategy = 'regex' | 'fuzzy' | 'both';
+
+
+    /**
+     * Options for path extraction.
+     */
+    export type Options = {
+      /**
+       * Convert all found paths to absolute paths.
+       * @default false
+       */
+      absolute?: boolean;
+      /**
+       * The base directory for resolving relative paths.
+       * @default process.cwd()
+       */
+      cwd?: string;
+      /**
+       * Ensure the returned list contains only unique paths.
+       * @default true
+       */
+      unique?: boolean;
+      /**
+       * The path extraction strategy to use.
+       * @default 'fuzzy'
+       */
+      strategy?: Strategy;
+    };
+
+
+    const DEFAULT_IGNORE_DIRS = ['node_modules', '.git', 'dist', 'build'];
+
+    const DEFAULT_IGNORE_FILES = ['package-lock.json', 'bun.lockb'];
+
+
+    /**
+     * Checks if a given path matches any of the default ignore patterns.
+     * @param p The path string to check.
+     * @returns True if the path should be ignored, false otherwise.
+     */
+    const isIgnored = (p: string): boolean => {
+      // Check against ignored directory patterns. This is a simple check; we see if
+      // any path segment is an exact match for a directory we want to ignore.
+      // This avoids accidentally filtering 'distribution/file.js'.
+      const segments = p.split(/[\\\/]/);
+      if (segments.some(segment => DEFAULT_IGNORE_DIRS.includes(segment))) {
+        return true;
+      }
+
+      // Check against ignored file patterns by looking at the basename.
+      const basename = path.basename(p);
+      return DEFAULT_IGNORE_FILES.includes(basename);
+    };
+
+
+    // This regex finds file paths, including optional line/column numbers. It's
+
+    // designed to be comprehensive, supporting Windows, Unix, absolute, and
+
+    // relative paths. The regex is structured to match complete paths:
+
+    // 1. Windows absolute paths (C:\path\to\file)
+
+    // 2. Unix absolute paths (/path/to/file)
+
+    // 3. Relative paths with separators (src/file.ts, ./dist, ../parent)
+
+    // 4. Standalone filenames with extensions (README.md, package.json)
+
+    const PATH_REGEX = new RegExp(
+      [
+        // Quoted paths with spaces (must come first to allow spaces)
+        /(?:"[^"]*[\\\/][^"]*"|'[^']*[\\\/][^']*')/.source,
+
+        // Parenthesized paths with spaces: (src/components/Button (new).tsx)
+        /\([^,)]*[\\\/][^,)]*\([^)]*\)[^,)]*\.[a-zA-Z0-9]+\)/.source,
+
+        // Windows UNC paths: \\server\share\file (must come before absolute)
+        /[\\\/]{2}[^\s\n]+[\\\/][^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+
+        // Windows absolute paths: C:\path\to\file (must come first to avoid partial matches)
+        /[a-zA-Z]:[\\\/][^\s\n]+(?:[\\\/][^\s\n]+)*/.source,
+
+        // Unix absolute paths: /path/to/file
+        /\/[^\s\n"']+(?:[\\\/][^\s\n"']+)*/.source,
+
+        // Relative paths with separators: ./file, ../file, src/file
+        /(?:\.[\\/]|[^\s\n"']+[\\/])[^\s\n"']+(?:[\\\/][^\s\n"']+)*/.source,
+
+        // Same as above, but uses a lookbehind to allow leading whitespace (for indented paths in logs)
+        /(?<=\s)(?:\.[\\/]|[^\s\n"']+[\\/])[^\s\n"']+(?:[\\\/][^\s\n"']+)*/.source,
+
+        // Standalone filenames with extensions: file.txt, README.md, my.component.test.js.
+        // Use negative lookbehind to avoid email domains and URL contexts
+        // Supports multi-dot filenames like my.component.test.js
+        /(?<!@|https?:\/\/[^\s]*)\b[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,}\b(?!\s*@)(?![^"]*")/.source,
+
+        // Common filenames without extensions
+        /\b(?:Dockerfile|Makefile|Jenkinsfile|Vagrantfile)\b/.source,
+      ].join('|'),
+      'g',
+    );
+
+
+    async function walk(dir: string): Promise<string[]> {
+      let entries: import('node:fs').Dirent[];
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+      } catch {
+        // Ignore errors from directories that cannot be read
+        return [];
+      }
+
+      const promises = entries.map(async (entry) => {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          return walk(fullPath);
+        }
+        return [fullPath];
+      });
+
+      const results = await Promise.all(promises);
+      return results.flat();
+    }
+
+
+    /**
+     * Extracts paths using a fuzzy strategy by looking for file basenames in text.
+     * @param text The text to search within.
+     * @param cwd The working directory to scan for files.
+     * @returns A promise resolving to an array of found relative paths.
+     */
+    async function extractPathsWithFuzzy(text: string, cwd: string):
+    Promise<string[]> {
+      const allAbsolutePaths = await walk(cwd);
+      const foundPaths = new Set<string>();
+      const normalizedText = text.replace(/\\/g, '/').replace(/['"`]/g, '');
+
+      const basenameToPaths = new Map<string, string[]>();
+      const allRelativePaths: string[] = [];
+
+      // Pre-process all paths once to build up our data structures
+      for (const absolutePath of allAbsolutePaths) {
+        const relativePath = path.relative(cwd, absolutePath);
+        if (isIgnored(relativePath)) continue;
+
+        allRelativePaths.push(relativePath);
+
+        const basename = path.basename(relativePath);
+        if (!basenameToPaths.has(basename)) basenameToPaths.set(basename, []);
+        basenameToPaths.get(basename)!.push(relativePath);
+      }
+
+      // Pass 1: Prioritize full, unambiguous path matches found in the text.
+      for (const relativePath of allRelativePaths) {
+        if (normalizedText.includes(relativePath.replace(/\\/g, '/'))) {
+          foundPaths.add(relativePath);
+        }
+      }
+
+      // Pass 2: Handle ambiguous basename-only matches.
+      for (const [basename, paths] of basenameToPaths.entries()) {
+        const basenameRegex = new RegExp(
+          `\\b${basename.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`,
+        );
+
+        if (!text.match(basenameRegex)) continue;
+        const hasExistingMatch = paths.some(p => foundPaths.has(p));
+        if (hasExistingMatch) continue;
+
+        paths.forEach(p => foundPaths.add(p));
+      }
+      return Array.from(foundPaths);
+    }
+
+
+    /**
+     * Extracts paths using a regex-based strategy.
+     * @param text The text to search within.
+     * @returns An array of found path strings, without post-processing.
+     */
+    function extractPathsWithRegex(text: string): string[] {
+      // 1. Find all potential paths using the regex.
+      const matches = Array.from(text.matchAll(PATH_REGEX), m => m[0]);
+
+      // 2. Extract valid paths from potentially malformed matches
+      const extractedPaths: string[] = [];
+      for (const match of matches) {
+        // If the match contains line breaks, it might contain multiple paths
+        if (match.includes('\n')) {
+          // Extract individual file paths from multiline strings
+          const pathPattern = /[a-zA-Z0-9_./\\-]+(?:\/[a-zA-Z0-9_.-]+)*\.[a-zA-Z0-9]{1,5}(?::\d+(?::\d+)?)?/gm;
+          const pathMatches = match.match(pathPattern);
+          if (pathMatches) {
+            extractedPaths.push(...pathMatches.map(p => p.trim()));
+          }
+        } else {
+          extractedPaths.push(match);
+        }
+      }
+
+      // 3. Clean up matches: remove trailing line/col numbers and common punctuation.
+      const cleanedPaths = extractedPaths.map(p => {
+        let pathStr = p;
+
+        // Remove line/column numbers and other trailing noise.
+        // Handles: :5:10, (5,10), :5, :5:, (5,10):
+        pathStr = pathStr.replace(/[:(]\d+(?:[.,:]\d+)*\)?[:]?$/, '');
+
+        // Remove query strings and fragments
+        pathStr = pathStr.replace(/[?#].*$/, '');
+
+        // Special handling for quoted paths and parentheses
+        if ((pathStr.startsWith('"') && pathStr.endsWith('"')) ||
+            (pathStr.startsWith("'") && pathStr.endsWith("'"))) {
+          pathStr = pathStr.slice(1, -1);
+        } else if (pathStr.startsWith('(') && pathStr.endsWith(')')) {
+          // Remove outer parentheses from parenthesized paths
+          pathStr = pathStr.slice(1, -1);
+        } else {
+          // For non-quoted paths, be more careful about punctuation
+          pathStr = pathStr.replace(/^["'\[<{]+/, ''); // Remove leading quotes, brackets, angle brackets, curly braces
+          pathStr = pathStr.replace(/["'\]>.,;}]+$/, ''); // Remove trailing quotes, brackets, angle brackets, curly braces, and punctuation
+        }
+
+        // Normalize backslashes but preserve UNC paths
+        if (!pathStr.startsWith('\\\\')) {
+          pathStr = pathStr.replace(/\\\\/g, '\\');
+        }
+
+        // Handle UNC paths intelligently - preserve file shares, normalize URL paths
+        if (pathStr.startsWith('//') && !pathStr.startsWith('\\\\')) {
+          // If it has a file extension, it's likely a file path that should be normalized
+          // If it doesn't have an extension and has only 2 segments, it's likely a UNC share
+          const hasExtension = /\.[a-zA-Z0-9]{1,5}$/.test(pathStr);
+          const segments = pathStr.split('/').filter(s => s.length > 0);
+          
+          if (hasExtension || segments.length > 2) {
+            // This looks like a file path, convert //server/file.txt to /server/file.txt
+            pathStr = pathStr.substring(1);
+          }
+          // Otherwise keep as UNC share like //server/share
+        }
+
+        // Remove URL scheme and domain if present
+        pathStr = pathStr.replace(/^https?:\/\/[^\/]+/, '');
+
+        // Remove domain prefix if this looks like a URL path without scheme
+        if (pathStr.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//)) {
+          pathStr = pathStr.replace(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//, '/');
+        }
+
+        return pathStr;
+      });
+
+      // 4. Filter out commonly ignored paths (e.g., node_modules).
+      const filteredPaths = cleanedPaths.filter(p => !isIgnored(p));
+
+      // 5. Filter out version numbers and other non-path patterns
+      const versionPattern = /^[a-zA-Z]?v?\d+(?:\.\d+)*$/;
+      const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+      const hashPattern = /^[a-f0-9]{7,40}$/i;
+      const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+      // const urlDomainPattern = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/; // Only filter pure domains, not paths
+
+    const validPaths = filteredPaths.filter(p => {
+        // Filter out multi-line strings and very long strings
+        if (p.includes('\n') || p.length > 200) {
+          return false;
+        }
+        
+        // Filter out function calls and method names specifically
+        if (p.includes('.') && !p.includes('/') && !p.includes('\\')) {
+          // This could be a function call like 'initActions.setAnalysisResults'
+          // But keep actual filenames like 'file.txt'
+          const parts = p.split('.');
+          if (parts.length > 1) {
+            const lastPart = parts[parts.length - 1];
+                if (!lastPart) return false;
+
+                // If the "extension" is mixed case, it is not a file extension.
+                const isMixedCase = /[A-Z]/.test(lastPart) && /[a-z]/.test(lastPart);
+                if (isMixedCase) {
+                    return false;
+                }
+
+                // If it's very long, it's probably not an extension
+                if (lastPart.length > 8) return false;
+          }
+        }
+        
+        // Filter out import statements and module references that appear in TypeScript errors
+        if (p.startsWith('"') && p.endsWith('"')) {
+          // Always filter quoted strings - they're usually import paths in error messages
+          return false;
+        }
+        
+        // Filter out relative import module references without file extensions
+        if ((p.startsWith('./') || p.startsWith('../')) && !p.includes(' ')) {
+          // If it doesn't have a file extension and is short, it's likely a module import
+          if (!/\.[a-zA-Z0-9]{1,5}$/.test(p) && p.split('/').length <= 3) {
+              return false;
+            }
+          }
+
+        return !versionPattern.test(p) &&
+               !uuidPattern.test(p) &&
+               !hashPattern.test(p) &&
+               !emailPattern.test(p) &&
+               p.trim() !== '';
+      });
+
+      // 6. Fix split paths that contain parentheses
+      const fixedPaths = fixSplitPaths(validPaths);
+      return fixedPaths;
+    }
+
+
+    /**
+     * Fixes paths that were incorrectly split due to parentheses in the middle.
+     * @param paths Array of extracted paths that may contain split paths.
+     * @returns Array of paths with split paths reassembled.
+     */
+    function fixSplitPaths(paths: string[]): string[] {
+      const result: string[] = [];
+      let i = 0;
+
+      while (i < paths.length) {
+        const current = paths[i];
+
+        // Check if current path starts with '(' and next path ends with ')'
+        if (i < paths.length - 1 &&
+            current && (current.startsWith('(') || current.endsWith('(')) &&
+            paths[i + 1] && paths[i + 1]?.match(/\).*\.[a-zA-Z0-9]+$/)) {
+          // Combine the paths and clean up
+          let combined = current + ' ' + paths[i + 1];
+
+          // Remove leading opening parenthesis and fix the path structure
+          if (combined.startsWith('(')) {
+            combined = combined.substring(1);
+          }
+          // Replace " new).tsx" with " (new).tsx" to preserve inner parentheses
+          combined = combined.replace(/ new\)\.([a-zA-Z0-9]+)$/, ' (new).$1');
+
+          result.push(combined);
+          i += 2; // Skip the next path as we've already consumed it
+        } else {
+          result.push(current || '');
+          i++;
+        }
+      }
+
+      return result;
+    }
+
+
+    /**
+     * Extracts potential file paths from a blob of text using a configurable strategy.
+     * @param text The text to search within.
+     * @param opts Configuration options for extraction.
+     * @returns A promise that resolves to an array of found file paths.
+     */
+    export async function extractPaths(
+      text: string,
+      opts: Options = {},
+    ): Promise<string[]> {
+      const {
+        absolute = false,
+        cwd = process.cwd(),
+        unique = true,
+        strategy = 'fuzzy',
+      } = opts;
+
+      let combinedPaths: string[] = [];
+
+      if (strategy === 'regex' || strategy === 'both') {
+        combinedPaths.push(...extractPathsWithRegex(text));
+      }
+
+      if (strategy === 'fuzzy' || strategy === 'both') {
+        combinedPaths.push(...(await extractPathsWithFuzzy(text, cwd)));
+      }
+
+      const uniquePaths = unique ? Array.from(new Set(combinedPaths)) : combinedPaths;
+
+      const resolvedPaths = absolute
+        ? uniquePaths.map(p => path.resolve(cwd, p))
+        : uniquePaths;
+
+      return resolvedPaths;
+    }
+
+
+    /**
+     * Filters a list of paths, keeping only the ones that exist on disk.
+     * @param paths An array of file paths to check.
+     * @param cwd The working directory to resolve relative paths against.
+     * @returns A promise that resolves to an array of existing file paths.
+     */
+    export async function verifyPaths(paths: string[], cwd: string =
+    process.cwd()): Promise<string[]> {
+      // Concurrently check for the existence of each file.
+      const checks = paths.map(async p => {
+        const absolutePath = path.isAbsolute(p) ? p : path.resolve(cwd, p);
+        try {
+          await fs.access(absolutePath);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      const existenceChecks = await Promise.all(checks);
+
+      // Filter the original paths array based on the results of the existence checks.
+      const existingPaths = paths.filter((_, i) => existenceChecks[i]);
+
+      return existingPaths;
+    }
+approved: true
+linesAdded: null
+linesRemoved: null
+linesDifference: null
+gitCommittedAt: null
+status: committed
+id: 41

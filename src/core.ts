@@ -84,7 +84,7 @@ const PATH_REGEX = new RegExp(
     // Standalone filenames with extensions: file.txt, README.md, my.component.test.js.
     // Use negative lookbehind to avoid email domains and URL contexts
     // Supports multi-dot filenames like my.component.test.js
-    /(?<!@|https?:\/\/[^\s]*)\b[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,}\b(?!\s*@)(?![^"]*")/.source,
+    /(?<!@|https?:\/\/[^\s]*)\b[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]{1,}\b(?![\\\/])(?!\s*@)(?![^"]*")/.source,
 
     // Common filenames without extensions
     /\b(?:Dockerfile|Makefile|Jenkinsfile|Vagrantfile)\b/.source,
@@ -119,30 +119,45 @@ async function walk(dir: string): Promise<string[]> {
  * @param cwd The working directory to scan for files.
  * @returns A promise resolving to an array of found relative paths.
  */
-async function extractPathsWithFuzzy(
-  text: string,
-  cwd: string,
-): Promise<string[]> {
-  const allFilePaths = await walk(cwd);
+async function extractPathsWithFuzzy(text: string, cwd: string): Promise<string[]> {
+  const allAbsolutePaths = await walk(cwd);
   const foundPaths = new Set<string>();
+  const normalizedText = text.replace(/\\/g, '/').replace(/['"`]/g, '');
 
-  for (const absolutePath of allFilePaths) {
+  const basenameToPaths = new Map<string, string[]>();
+  const allRelativePaths: string[] = [];
+
+  // Pre-process all paths once to build up our data structures
+  for (const absolutePath of allAbsolutePaths) {
     const relativePath = path.relative(cwd, absolutePath);
-    if (isIgnored(relativePath)) {
-      continue;
-    }
+    if (isIgnored(relativePath)) continue;
+
+    allRelativePaths.push(relativePath);
 
     const basename = path.basename(relativePath);
-    // Use a regex to find the basename as a whole word to avoid matching substrings.
-    const basenameRegex = new RegExp(
-      `\\b${basename.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`,
-      'g',
-    );
-    if (text.match(basenameRegex)) {
+    if (!basenameToPaths.has(basename)) basenameToPaths.set(basename, []);
+    basenameToPaths.get(basename)!.push(relativePath);
+  }
+
+  // Pass 1: Prioritize full, unambiguous path matches found in the text.
+  for (const relativePath of allRelativePaths) {
+    if (normalizedText.includes(relativePath.replace(/\\/g, '/'))) {
       foundPaths.add(relativePath);
     }
   }
 
+  // Pass 2: Handle ambiguous basename-only matches.
+  for (const [basename, paths] of basenameToPaths.entries()) {
+    const basenameRegex = new RegExp(
+      `\\b${basename.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`,
+    );
+
+    if (!text.match(basenameRegex)) continue;
+    const hasExistingMatch = paths.some(p => foundPaths.has(p));
+    if (hasExistingMatch) continue;
+
+    paths.forEach(p => foundPaths.add(p));
+  }
   return Array.from(foundPaths);
 }
 

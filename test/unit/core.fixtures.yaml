@@ -205,6 +205,18 @@
     - "file1.txt"
     - "file2.log"
     - "path/to/file3.json"
+- name: "should extract paths with dots in directory names"
+  options: { strategy: 'regex' }
+  input: |
+    - 'src/services/config.service.ts'
+    - 'relaycode.old/src/core/config.ts'
+    - 'relaycode.old/src/core/state.ts'
+    - 'index.tsx'
+  expected:
+    - "src/services/config.service.ts"
+    - "relaycode.old/src/core/config.ts"
+    - "relaycode.old/src/core/state.ts"
+    - "index.tsx"
 - name: "Should extract paths from TypeScript compiler error output"
   options: { strategy: 'regex' }
   input: |

@@ -1,0 +1,208 @@
+uuid: c258f4a1-0268-45a8-b63e-72fa99863c0f
+projectId: pathfish
+createdAt: '2025-09-30T01:08:44.460Z'
+gitCommitMsg: >-
+  test: add integration tests for fuzzy strategy ambiguity
+
+  This commit adds two new integration test cases to `engine.fixtures.yaml` to
+  validate the improved fuzzy matching logic.
+
+  1. A test case to confirm that when a full path is provided in the input, the
+  fuzzy strategy correctly disambiguates and does not include other files that
+  merely share the same basename. This serves as a regression test for the
+  recent fix.
+
+  2. A second test case to verify that when the input is genuinely ambiguous
+  (containing only a basename), the strategy correctly falls back to including
+  all potential file matches. This ensures the "fuzzy" capability is preserved
+  where appropriate.
+promptSummary: >-
+  The user requested adding regression tests to cover the fuzzy matching
+  false-positive scenario I just fixed.
+reasoning:
+  - >-
+    Excellent point. Adding regression tests is a critical step to ensure the
+    fix is robust and to prevent this issue from recurring. I will add new test
+    cases to the integration test suite that specifically reproduce the false
+    positive scenario and verify that my fix resolves it correctly.
+  - '### Step-by-step reasoning:'
+  - >-
+    1.  **Identify the test file**: The best place to add a test case that
+    involves file system interaction and the fuzzy strategy is
+    `test/integration/engine.fixtures.yaml`. This file drives the integration
+    tests for the core pipeline.
+  - '2.  **Design the primary test case**:'
+  - >-
+    *   **Goal**: To prove that when a full path is mentioned, the fuzzy
+    strategy no longer incorrectly includes other files that just share the same
+    basename.
+  - >-
+    *   **Setup**: I'll create a file structure with two files named `db.ts` in
+    different directories.
+  - >-
+    *   **Input**: The input text will explicitly reference *one* of those full
+    paths (`src/core/db.ts`).
+  - >-
+    *   **Expected Output**: The result should *only* be the single, specific
+    path mentioned in the input, not both `db.ts` files.
+  - '3.  **Design a secondary test case**:'
+  - >-
+    *   **Goal**: To ensure the "fuzzy" aspect is preserved when the input is
+    genuinely ambiguous (i.e., it *only* contains the basename).
+  - '*   **Setup**: I''ll use the same file structure as the primary test case.'
+  - '*   **Input**: The input text will only mention the basename `db.ts`.'
+  - >-
+    *   **Expected Output**: The result should include *both* `db.ts` files,
+    because, in this case, both are plausible matches.
+  - >-
+    By adding these two cases, I can confirm that the logic is now more precise
+    when context is available, but still helpful when the input is vague.
+  - '### Code changes:'
+  - I will add the new test cases to `test/integration/engine.fixtures.yaml`.
+  - '---'
+operations:
+  - type: write
+    path: test/integration/engine.fixtures.yaml
+    content: >+
+      --- test/integration/engine.fixtures.yaml
+
+      +++ test/integration/engine.fixtures.yaml
+
+      @@ -95,3 +95,27 @@
+           'src/core.ts': 'export {}'
+         expected: |
+           src/engine.ts
+      +
+
+      +- name: "Fuzzy strategy should not produce false positives for ambiguous
+      basenames"
+
+      +  options: { format: 'list', verify: false, strategy: 'fuzzy' }
+
+      +  input: |
+
+      +    Referencing src/core/db.ts and also src/core/state.ts.
+
+      +    The file db.ts in packages/konro is not relevant here.
+
+      +  files:
+
+      +    'src/core/db.ts': 'content'
+
+      +    'src/core/state.ts': 'content'
+
+      +    'packages/konro/src/db.ts': 'content'
+
+      +  expected: |
+
+      +    src/core/db.ts
+
+      +    src/core/state.ts
+
+      +
+
+      +- name: "Fuzzy strategy should include all candidates for a truly
+      ambiguous basename"
+
+      +  options: { format: 'list', verify: false, strategy: 'fuzzy' }
+
+      +  input: "The error is definitely in db.ts, but I'm not sure which one."
+
+      +  files:
+
+      +    'src/core/db.ts': 'content'
+
+      +    'src/core/state.ts': 'content'
+
+      +    'packages/konro/src/db.ts': 'content'
+
+      +  expected: |
+
+      +    src/core/db.ts
+
+      +    packages/konro/src/db.ts
+
+    patchStrategy: standard-diff
+snapshot:
+  test/integration/engine.fixtures.yaml: |-
+    - name: "Basic pipeline: extract and format as pretty JSON"
+      options: { format: 'json', pretty: true, strategy: 'regex' }
+      input: "File is src/index.ts and another is ./README.md"
+      files:
+        "src/index.ts": ""
+        "./README.md": ""
+      expected: |
+        [
+          "src/index.ts",
+          "./README.md"
+        ]
+
+    - name: "Pipeline with verification, filtering out non-existent paths"
+      options: { format: 'list', verify: true, strategy: 'regex' }
+      input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
+      files:
+        'file1.txt': 'content'
+        'dir/file2.log': 'log content'
+      expected: |
+        file1.txt
+        dir/file2.log
+
+    - name: "Pipeline with absolute path conversion"
+      options: { absolute: true, format: 'json', pretty: false, verify: false, strategy: 'regex' } # verification disabled
+      input: "Relative path: src/main.js and ./index.html"
+      files: {}
+      expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
+
+    - name: "Pipeline with verification and absolute path conversion"
+      options: { absolute: true, format: 'yaml', verify: true, strategy: 'regex' }
+      input: "Real: src/app.ts. Fake: src/fake.ts"
+      files:
+        'src/app.ts': 'export default {}'
+      expected: |
+        - {{CWD}}/src/app.ts
+
+    - name: "Pipeline with different format (yaml) and no unique"
+      options: { format: 'yaml', unique: false, verify: false, strategy: 'regex' }
+      input: "path: a.txt, again: a.txt"
+      files: {}
+      expected: |
+        - a.txt
+        - a.txt
+
+    - name: "Pipeline should produce empty output for no matches"
+      options: { format: 'json', strategy: 'regex' }
+      input: "Just some regular text without any paths."
+      files: {}
+      expected: "[]"
+
+    - name: "Pipeline with complex paths and query strings"
+      options: { format: 'list', verify: false, strategy: 'regex' }
+      input: "Path1: /a/b.css?v=1 Path2: src/d.ts#foo Path3: user@domain.com"
+      files: {}
+      expected: |
+        /a/b.css
+        src/d.ts
+
+    - name: "Pipeline with quoted path with spaces and verification"
+      options: { format: 'list', verify: true, strategy: 'regex' }
+      input: 'Log: "real dir/real file.txt" and "fake dir/fake file.txt"'
+      files:
+        'real dir/real file.txt': 'content'
+      expected: |
+        real dir/real file.txt
+
+    - name: "Pipeline with fuzzy strategy and verification"
+      options: { format: 'list', verify: true, strategy: 'fuzzy' }
+      input: 'I was editing engine.ts and also missing.ts'
+      files:
+        'src/engine.ts': 'export {}'
+        'src/core.ts': 'export {}'
+      expected: |
+        src/engine.ts
+approved: true
+linesAdded: null
+linesRemoved: null
+linesDifference: null
+gitCommittedAt: null
+status: committed
+id: 38

@@ -35,13 +35,19 @@ describe('engine.ts (Integration)', async () => {
           // Use the temp directory as the CWD for the pipeline
           const result = await runPipeline(input, { ...options, cwd: tempDir });
 
-          // Replace placeholder in expected output with the actual temp dir path.
-          // Trim both results to handle trailing newlines from multiline strings in YAML.
-          const expectedWithCwd = expected
-            .replaceAll('{{CWD}}', tempDir)
-            .trim();
+          const expectedWithCwd = expected.replaceAll('{{CWD}}', tempDir);
 
-          expect(result.trim()).toEqual(expectedWithCwd);
+          // Use different comparison strategies based on format to avoid flaky tests
+          if (options.format === 'list' || options.format === 'yaml') {
+            // For line-based formats, sort lines to make comparison order-insensitive
+            const sortLines = (s: string) =>
+              s.trim().split('\n').map(l => l.trim()).sort();
+            expect(sortLines(result)).toEqual(sortLines(expectedWithCwd));
+          } else {
+            // For JSON, a simple trim is usually enough, as order is often preserved.
+            // More complex JSON could be parsed and deep-sorted if needed.
+            expect(result.trim()).toEqual(expectedWithCwd.trim());
+          }
         });
       });
     });

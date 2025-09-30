@@ -72,3 +72,27 @@
     'src/core.ts': 'export {}'
   expected: |
     src/engine.ts
+
+- name: "Fuzzy strategy should not produce false positives for ambiguous basenames"
+  options: { format: 'list', verify: false, strategy: 'fuzzy' }
+  input: |
+    Referencing src/core/db.ts and also src/core/state.ts.
+    The file db.ts in packages/konro is not relevant here.
+  files:
+    'src/core/db.ts': 'content'
+    'src/core/state.ts': 'content'
+    'packages/konro/src/db.ts': 'content'
+  expected: |
+    src/core/db.ts
+    src/core/state.ts
+
+- name: "Fuzzy strategy should include all candidates for a truly ambiguous basename"
+  options: { format: 'list', verify: false, strategy: 'fuzzy' }
+  input: "The error is definitely in db.ts, but I'm not sure which one."
+  files:
+    'src/core/db.ts': 'content'
+    'src/core/state.ts': 'content'
+    'packages/konro/src/db.ts': 'content'
+  expected: |
+    src/core/db.ts
+    packages/konro/src/db.ts

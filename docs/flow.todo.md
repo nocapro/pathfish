@@ -1,60 +1,51 @@
-this is the published version of pathfish, guardrails below problems into test cases, I also checked that the file exists.
+the fuzzy strategy should also matching the path after the file name+ext
 
-but its weird that init.store.ts and fs.service.ts not detected but in test cases is passed
-
----------------
-
-realme-book@realme-book:~/Project/code/relaycode-new$ bun tsc -b
-src/components/SettingsScreen.tsx:5:10 - error TS6133: 'AI_PROVIDERS' is declared but its value is never read.
-
-5 import { AI_PROVIDERS, SETTINGS_FOOTER_ACTIONS } from '../constants/settings.constants';
-           ~~~~~~~~~~~~
-
-src/hooks/useDebugMenu.tsx:101:29 - error TS2554: Expected 4 arguments, but got 3.
-
-101                 initActions.setAnalysisResults('relaycode-tui', true, false);
-                                ~~~~~~~~~~~~~~~~~~
-
-  src/stores/init.store.ts:30:99
-    30         setAnalysisResults: (projectId: string, gitignoreFound: boolean, gitInitialized: boolean, configExists: boolean) => void;
-                                                                                                         ~~~~~~~~~~~~~~~~~~~~~
-    An argument for 'configExists' was not provided.
-
-src/services/copy.service.ts:5:10 - error TS2305: Module '"./fs.service"' has no exported member 'FileSystemService'.
-
-5 import { FileSystemService } from './fs.service';
-           ~~~~~~~~~~~~~~~~~
-
-src/services/init.service.ts:10:32 - error TS2305: Module '"../constants/fs.constants"' has no exported member 'PROMPT_FILE_NAME'.
-
-10 import { STATE_DIRECTORY_NAME, PROMPT_FILE_NAME } from '../constants/fs.constants';
-                                  ~~~~~~~~~~~~~~~~
-
-src/services/init.service.ts:20:25 - error TS2554: Expected 1 arguments, but got 0.
-
-20         await FsService.updateGitignore();
-                           ~~~~~~~~~~~~~~~
-
-  src/services/fs.service.ts:42:32
-    42 const updateGitignore = async (cwd: string): Promise<{ created: boolean, updated: boolean }> => {
-                                      ~~~~~~~~~~~
-    An argument for 'cwd' was not provided.
-
-
-Found 5 errors.
-
-error: "tsc" exited with code 1
-realme-book@realme-book:~/Project/code/relaycode-new$ bun tsc -b | pathfish --no-verify
-error: "tsc" exited with code 1
+realme-book@realme-book:~/Project/code/relaycode-new$ echo " - 'src/services/config.service.ts'
+          - 'src/stores/config.store.ts'
+          - 'src/services/persistence.service.ts'
+          - 'src/services/transaction.service.ts'
+          - 'relaycode.old/src/core/config.ts'
+          - 'relaycode.old/src/core/state.ts'
+          - 'relaycode.old/src/core/db.ts'
+          - 'src/types/config.types.ts'
+          - 'src/types/domain.types.ts'
+          - 'index.tsx'" | pathfish --strategy fuzzy
 [
-  "src/components/SettingsScreen.tsx",
-  "src/hooks/useDebugMenu.tsx",
-  "src/services/copy.service.ts",
-  "src/services/init.service.ts"
+  "index.tsx",
+  "relaycode.old/packages/apply-multi-diff/src/types.ts",
+  "relaycode.old/packages/konro/src/db.ts",
+  "relaycode.old/packages/konro/src/types.ts",
+  "relaycode.old/packages/relaycode-core/src/types.ts",
+  "relaycode.old/src/core/config.ts",
+  "relaycode.old/src/core/db.ts",
+  "relaycode.old/src/core/state.ts",
+  "src/services/persistence.service.ts",
+  "src/services/transaction.service.ts",
+  "src/types/config.types.ts",
+  "src/types/domain.types.ts"
 ]
---------------------
 
 ===
+
+auto copy to clipboard the result
+
+===
+
+create pathfish UI
+
+===
+
+run cd /home/realme-book/Project/code/relaycode-new && bun tsc -b | pathfish --strategy both --no-verify
+
+you will see that its weird that init.store.ts and fs.service.ts not detected but in similiar test cases is passed test/unit/core.fixtures.yaml and detected
+
+1. /home/realme-book/Project/code/relaycode-new use the published version of pathfish
+2. to run test, run `bun dist-test` on /home/realme-book/Project/code/pathfish
+3. to iterate you should improve /home/realme-book/Project/code/pathfish then do npm publish then bun install pathfish@[specific version you just published] at other dir to use
+
+
+
+=== DONE
 
 current tests is focused on regex, I want when fixtures says using regex and fuzzy the test should run two tests so user can compare different strategy results
 
