@@ -233,7 +233,9 @@ function extractPathsWithRegex(text: string): string[] {
     pathStr = pathStr.replace(/^https?:\/\/[^\/]+/, '');
 
     // Remove domain prefix if this looks like a URL path without scheme
-    if (pathStr.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//)) {
+    // Only remove if it starts with common TLDs that suggest it's a domain
+    const commonTlds = /\.(com|org|net|edu|gov|mil|io|co|ai|dev|app|xyz)\//;
+    if (pathStr.match(commonTlds)) {
       pathStr = pathStr.replace(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//, '/');
     }
 
