@@ -148,15 +148,32 @@ async function extractPathsWithFuzzy(text: string, cwd: string): Promise<string[
 
   // Pass 2: Handle ambiguous basename-only matches.
   for (const [basename, paths] of basenameToPaths.entries()) {
-    const basenameRegex = new RegExp(
-      `\\b${basename.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`,
-    );
-
-    if (!text.match(basenameRegex)) continue;
     const hasExistingMatch = paths.some(p => foundPaths.has(p));
     if (hasExistingMatch) continue;
 
-    paths.forEach(p => foundPaths.add(p));
+    const basenameRegex = new RegExp(
+      `\\b${basename.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`,
+      'g',
+    );
+
+    let match;
+    let hasStandaloneMatch = false;
+    while ((match = basenameRegex.exec(text)) !== null) {
+      if (match.index > 0) {
+        const charBefore = text[match.index - 1];
+        // Avoid matching a basename that is part of a larger filename
+        // e.g. matching 'types.ts' inside 'domain.types.ts'
+          if (charBefore && /[\w.-]/.test(charBefore)) {
+          continue;
+        }
+      }
+      hasStandaloneMatch = true;
+      break; // One standalone match is enough to trigger
+    }
+
+    if (hasStandaloneMatch) {
+      paths.forEach(p => foundPaths.add(p));
+    }
   }
   return Array.from(foundPaths);
 }

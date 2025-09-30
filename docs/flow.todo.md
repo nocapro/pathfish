@@ -1,4 +1,6 @@
-the fuzzy strategy should also matching the path after the file name+ext
+the fuzzy strategy should also matching the path after the file name+ext.
+
+also reproduce the issue trough test cases for guardrails the implementation
 
 realme-book@realme-book:~/Project/code/relaycode-new$ echo " - 'src/services/config.service.ts'
           - 'src/stores/config.store.ts'
@@ -12,18 +14,21 @@ realme-book@realme-book:~/Project/code/relaycode-new$ echo " - 'src/services/con
           - 'index.tsx'" | pathfish --strategy fuzzy
 [
   "index.tsx",
-  "relaycode.old/packages/apply-multi-diff/src/types.ts",
-  "relaycode.old/packages/konro/src/db.ts",
-  "relaycode.old/packages/konro/src/types.ts",
-  "relaycode.old/packages/relaycode-core/src/types.ts",
   "relaycode.old/src/core/config.ts",
   "relaycode.old/src/core/db.ts",
   "relaycode.old/src/core/state.ts",
+  "src/services/config.service.ts",
   "src/services/persistence.service.ts",
   "src/services/transaction.service.ts",
+  "src/stores/config.store.ts",
   "src/types/config.types.ts",
-  "src/types/domain.types.ts"
+  "src/types/domain.types.ts",
+  "relaycode.old/packages/apply-multi-diff/src/types.ts",
+  "relaycode.old/packages/konro/src/types.ts",
+  "relaycode.old/packages/relaycode-core/src/types.ts"
 ]
+realme-book@realme-book:~/Project/code/relaycode-new$ pathfish -v
+v0.1.9
 
 ===
 

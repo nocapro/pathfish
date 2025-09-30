@@ -434,167 +434,6 @@ describe('createFormatter', async () => {
   expected_stdout: "src/cli.ts"
 ````
 
-## File: test/integration/engine.fixtures.yaml
-````yaml
-- name: "Basic pipeline: extract and format as pretty JSON"
-  options: { format: 'json', pretty: true, strategy: 'regex' }
-  input: "File is src/index.ts and another is ./README.md"
-  files:
-    "src/index.ts": ""
-    "./README.md": ""
-  expected: |
-    [
-      "src/index.ts",
-      "./README.md"
-    ]
-
-- name: "Pipeline with verification, filtering out non-existent paths"
-  options: { format: 'list', verify: true, strategy: 'regex' }
-  input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
-  files:
-    'file1.txt': 'content'
-    'dir/file2.log': 'log content'
-  expected: |
-    file1.txt
-    dir/file2.log
-
-- name: "Pipeline with absolute path conversion"
-  options: { absolute: true, format: 'json', pretty: false, verify: false, strategy: 'regex' } # verification disabled
-  input: "Relative path: src/main.js and ./index.html"
-  files: {}
-  expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
-
-- name: "Pipeline with verification and absolute path conversion"
-  options: { absolute: true, format: 'yaml', verify: true, strategy: 'regex' }
-  input: "Real: src/app.ts. Fake: src/fake.ts"
-  files:
-    'src/app.ts': 'export default {}'
-  expected: |
-    - {{CWD}}/src/app.ts
-
-- name: "Pipeline with different format (yaml) and no unique"
-  options: { format: 'yaml', unique: false, verify: false, strategy: 'regex' }
-  input: "path: a.txt, again: a.txt"
-  files: {}
-  expected: |
-    - a.txt
-    - a.txt
-
-- name: "Pipeline should produce empty output for no matches"
-  options: { format: 'json', strategy: 'regex' }
-  input: "Just some regular text without any paths."
-  files: {}
-  expected: "[]"
-
-- name: "Pipeline with complex paths and query strings"
-  options: { format: 'list', verify: false, strategy: 'regex' }
-  input: "Path1: /a/b.css?v=1 Path2: src/d.ts#foo Path3: user@domain.com"
-  files: {}
-  expected: |
-    /a/b.css
-    src/d.ts
-
-- name: "Pipeline with quoted path with spaces and verification"
-  options: { format: 'list', verify: true, strategy: 'regex' }
-  input: 'Log: "real dir/real file.txt" and "fake dir/fake file.txt"'
-  files:
-    'real dir/real file.txt': 'content'
-  expected: |
-    real dir/real file.txt
-
-- name: "Pipeline with fuzzy strategy and verification"
-  options: { format: 'list', verify: true, strategy: 'fuzzy' }
-  input: 'I was editing engine.ts and also missing.ts'
-  files:
-    'src/engine.ts': 'export {}'
-    'src/core.ts': 'export {}'
-  expected: |
-    src/engine.ts
-
-- name: "Fuzzy strategy should not produce false positives for ambiguous basenames"
-  options: { format: 'list', verify: false, strategy: 'fuzzy' }
-  input: |
-    Referencing src/core/db.ts and also src/core/state.ts.
-    The file db.ts in packages/konro is not relevant here.
-  files:
-    'src/core/db.ts': 'content'
-    'src/core/state.ts': 'content'
-    'packages/konro/src/db.ts': 'content'
-  expected: |
-    src/core/db.ts
-    src/core/state.ts
-
-- name: "Fuzzy strategy should include all candidates for a truly ambiguous basename"
-  options: { format: 'list', verify: false, strategy: 'fuzzy' }
-  input: "The error is definitely in db.ts, but I'm not sure which one."
-  files:
-    'src/core/db.ts': 'content'
-    'src/core/state.ts': 'content'
-    'packages/konro/src/db.ts': 'content'
-  expected: |
-    src/core/db.ts
-    packages/konro/src/db.ts
-````
-
-## File: test/integration/engine.test.ts
-````typescript
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { runPipeline, type PipelineOptions } from '../../dist/engine.js';
-import {
-  loadYamlFixture,
-  setupTestDirectory,
-  cleanupTestDirectory,
-} from '../test.utils';
-
-type EngineTestCase = {
-  name: string;
-  options: PipelineOptions;
-  input: string;
-  files: { [path: string]: string };
-  expected: string;
-};
-
-describe('engine.ts (Integration)', async () => {
-  const fixtures = await loadYamlFixture<EngineTestCase[]>('integration/engine.fixtures.yaml');
-
-  describe('runPipeline', () => {
-    // Use a separate describe block for each test case to avoid closure issues
-    fixtures.forEach(({ name, options, input, files, expected }) => {
-      describe(name, () => {
-        let tempDir: string;
-
-        beforeEach(async () => {
-          tempDir = await setupTestDirectory(files);
-        });
-
-        afterEach(async () => {
-          await cleanupTestDirectory(tempDir);
-        });
-
-        it('should execute correctly', async () => {
-          // Use the temp directory as the CWD for the pipeline
-          const result = await runPipeline(input, { ...options, cwd: tempDir });
-
-          const expectedWithCwd = expected.replaceAll('{{CWD}}', tempDir);
-
-          // Use different comparison strategies based on format to avoid flaky tests
-          if (options.format === 'list' || options.format === 'yaml') {
-            // For line-based formats, sort lines to make comparison order-insensitive
-            const sortLines = (s: string) =>
-              s.trim().split('\n').map(l => l.trim()).sort();
-            expect(sortLines(result)).toEqual(sortLines(expectedWithCwd));
-          } else {
-            // For JSON, a simple trim is usually enough, as order is often preserved.
-            // More complex JSON could be parsed and deep-sorted if needed.
-            expect(result.trim()).toEqual(expectedWithCwd.trim());
-          }
-        });
-      });
-    });
-  });
-});
-````
-
 ## File: test/test.utils.ts
 ````typescript
 import { file } from 'bun';
@@ -1019,6 +858,306 @@ describe('cli.ts (E2E)', async () => {
 });
 ````
 
+## File: test/integration/engine.fixtures.yaml
+````yaml
+- name: "Basic pipeline: extract and format as pretty JSON"
+  options: { format: 'json', pretty: true, strategy: 'regex' }
+  input: "File is src/index.ts and another is ./README.md"
+  files:
+    "src/index.ts": ""
+    "./README.md": ""
+  expected: |
+    [
+      "src/index.ts",
+      "./README.md"
+    ]
+
+- name: "Pipeline with verification, filtering out non-existent paths"
+  options: { format: 'list', verify: true, strategy: 'regex' }
+  input: "Existing file: file1.txt. Missing file: missing.txt. Existing subdir file: dir/file2.log"
+  files:
+    'file1.txt': 'content'
+    'dir/file2.log': 'log content'
+  expected: |
+    file1.txt
+    dir/file2.log
+
+- name: "Pipeline with absolute path conversion"
+  options: { absolute: true, format: 'json', pretty: false, verify: false, strategy: 'regex' } # verification disabled
+  input: "Relative path: src/main.js and ./index.html"
+  files: {}
+  expected: '["{{CWD}}/src/main.js","{{CWD}}/index.html"]'
+
+- name: "Pipeline with verification and absolute path conversion"
+  options: { absolute: true, format: 'yaml', verify: true, strategy: 'regex' }
+  input: "Real: src/app.ts. Fake: src/fake.ts"
+  files:
+    'src/app.ts': 'export default {}'
+  expected: |
+    - {{CWD}}/src/app.ts
+
+- name: "Pipeline with different format (yaml) and no unique"
+  options: { format: 'yaml', unique: false, verify: false, strategy: 'regex' }
+  input: "path: a.txt, again: a.txt"
+  files: {}
+  expected: |
+    - a.txt
+    - a.txt
+
+- name: "Pipeline should produce empty output for no matches"
+  options: { format: 'json', strategy: 'regex' }
+  input: "Just some regular text without any paths."
+  files: {}
+  expected: "[]"
+
+- name: "Pipeline with complex paths and query strings"
+  options: { format: 'list', verify: false, strategy: 'regex' }
+  input: "Path1: /a/b.css?v=1 Path2: src/d.ts#foo Path3: user@domain.com"
+  files: {}
+  expected: |
+    /a/b.css
+    src/d.ts
+
+- name: "Pipeline with quoted path with spaces and verification"
+  options: { format: 'list', verify: true, strategy: 'regex' }
+  input: 'Log: "real dir/real file.txt" and "fake dir/fake file.txt"'
+  files:
+    'real dir/real file.txt': 'content'
+  expected: |
+    real dir/real file.txt
+
+- name: "Pipeline with fuzzy strategy and verification"
+  options: { format: 'list', verify: true, strategy: 'fuzzy' }
+  input: 'I was editing engine.ts and also missing.ts'
+  files:
+    'src/engine.ts': 'export {}'
+    'src/core.ts': 'export {}'
+  expected: |
+    src/engine.ts
+
+- name: "Fuzzy strategy should not produce false positives for ambiguous basenames"
+  options: { format: 'list', verify: false, strategy: 'fuzzy' }
+  input: |
+    Referencing src/core/db.ts and also src/core/state.ts.
+    The file db.ts in packages/konro is not relevant here.
+  files:
+    'src/core/db.ts': 'content'
+    'src/core/state.ts': 'content'
+    'packages/konro/src/db.ts': 'content'
+  expected: |
+    src/core/db.ts
+    src/core/state.ts
+
+- name: "Fuzzy strategy should include all candidates for a truly ambiguous basename"
+  options: { format: 'list', verify: false, strategy: 'fuzzy' }
+  input: "The error is definitely in db.ts, but I'm not sure which one."
+  files:
+    'src/core/db.ts': 'content'
+    'src/core/state.ts': 'content'
+    'packages/konro/src/db.ts': 'content'
+  expected: |
+    src/core/db.ts
+    packages/konro/src/db.ts
+
+- name: "Fuzzy strategy should not match basename if it is part of a longer filename"
+  options: { format: 'list', verify: false, strategy: 'fuzzy' }
+  input: |
+    - src/types/config.types.ts
+    - src/types/domain.types.ts
+  files:
+    'src/types/config.types.ts': 'content'
+    'src/types/domain.types.ts': 'content'
+    'other/location/types.ts': 'content'
+  expected: |
+    src/types/config.types.ts
+    src/types/domain.types.ts
+````
+
+## File: test/integration/engine.test.ts
+````typescript
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { runPipeline, type PipelineOptions } from '../../dist/engine.js';
+import {
+  loadYamlFixture,
+  setupTestDirectory,
+  cleanupTestDirectory,
+} from '../test.utils';
+
+type EngineTestCase = {
+  name: string;
+  options: PipelineOptions;
+  input: string;
+  files: { [path: string]: string };
+  expected: string;
+};
+
+describe('engine.ts (Integration)', async () => {
+  const fixtures = await loadYamlFixture<EngineTestCase[]>('integration/engine.fixtures.yaml');
+
+  describe('runPipeline', () => {
+    // Use a separate describe block for each test case to avoid closure issues
+    fixtures.forEach(({ name, options, input, files, expected }) => {
+      describe(name, () => {
+        let tempDir: string;
+
+        beforeEach(async () => {
+          tempDir = await setupTestDirectory(files);
+        });
+
+        afterEach(async () => {
+          await cleanupTestDirectory(tempDir);
+        });
+
+        it('should execute correctly', async () => {
+          // Use the temp directory as the CWD for the pipeline
+          const result = await runPipeline(input, { ...options, cwd: tempDir });
+
+          const expectedWithCwd = expected.replaceAll('{{CWD}}', tempDir);
+
+          // Use different comparison strategies based on format to avoid flaky tests
+          if (options.format === 'list' || options.format === 'yaml') {
+            // For line-based formats, sort lines to make comparison order-insensitive
+            const sortLines = (s: string) =>
+              s.trim().split('\n').map(l => l.trim()).sort();
+            expect(sortLines(result)).toEqual(sortLines(expectedWithCwd));
+          } else {
+            // For JSON, a simple trim is usually enough, as order is often preserved.
+            // More complex JSON could be parsed and deep-sorted if needed.
+            expect(result.trim()).toEqual(expectedWithCwd.trim());
+          }
+        });
+      });
+    });
+  });
+});
+````
+
+## File: test/unit/core.test.ts
+````typescript
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import path from 'node:path';
+import { extractPaths, verifyPaths, type Options, type Strategy } from '../../dist/core.js';
+import {
+  loadYamlFixture,
+  setupTestDirectory,
+  cleanupTestDirectory,
+} from '../test.utils';
+
+type ExtractPathsTestCase = {
+  name: string;
+  options: Options;
+  input: string;
+  files?: { [path: string]: string };
+  expected?: string[];
+  expected_by_strategy?: {
+    [S in Strategy]?: string[];
+  };
+};
+
+describe('core.ts', () => {
+  describe('extractPaths', async () => {
+    const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
+
+    for (const { name, options, input, files, expected, expected_by_strategy } of fixtures) {
+      if (expected_by_strategy) {
+        describe(name, () => {
+          for (const [strategy, expectedOutput] of Object.entries(
+            expected_by_strategy,
+          )) {
+            if (!expectedOutput) continue;
+            it(`with strategy: ${strategy}`, async () => {
+              let tempDir: string | undefined;
+              let cwd = options.cwd || process.cwd();
+              if (files && Object.keys(files).length > 0) {
+                tempDir = await setupTestDirectory(files);
+                cwd = tempDir;
+              }
+
+              const result = await extractPaths(input, {
+                ...options,
+                cwd,
+                strategy: strategy as Strategy,
+              });
+              // Sort for stable comparison
+              expect(result.sort()).toEqual(expectedOutput.sort());
+
+              if (tempDir) {
+                await cleanupTestDirectory(tempDir);
+              }
+            });
+          }
+        });
+      } else {
+        it(name, async () => {
+          let tempDir: string | undefined;
+          let cwd = options.cwd || process.cwd();
+          if (files && Object.keys(files).length > 0) {
+            tempDir = await setupTestDirectory(files);
+            cwd = tempDir;
+          }
+
+          const result = await extractPaths(input, { ...options, cwd });
+          // Sort for stable comparison
+          expect(result.sort()).toEqual((expected ?? []).sort());
+
+          if (tempDir) {
+            await cleanupTestDirectory(tempDir);
+          }
+        });
+      }
+    }
+  });
+
+  describe('verifyPaths', () => {
+    let tempDir: string;
+    const testFiles = {
+      'file1.txt': 'hello',
+      'dir/file2.js': 'content',
+      'dir/subdir/file3.json': '{}',
+    };
+
+    beforeEach(async () => {
+      tempDir = await setupTestDirectory(testFiles);
+    });
+
+    afterEach(async () => {
+      await cleanupTestDirectory(tempDir);
+    });
+
+    it('should return only paths that exist on disk', async () => {
+      const pathsToCheck = [
+        path.join(tempDir, 'file1.txt'), // exists
+        path.join(tempDir, 'dir/file2.js'), // exists
+        path.join(tempDir, 'non-existent.txt'), // does not exist
+        path.join(tempDir, 'dir/subdir/another.json'), // does not exist
+      ];
+
+      const expected = [
+        path.join(tempDir, 'file1.txt'),
+        path.join(tempDir, 'dir/file2.js'),
+      ];
+
+      const result = await verifyPaths(pathsToCheck, tempDir);
+      expect(result.sort()).toEqual(expected.sort());
+    });
+
+    it('should return an empty array if no paths exist', async () => {
+      const pathsToCheck = [
+        path.join(tempDir, 'foo.txt'),
+        path.join(tempDir, 'bar.js'),
+      ];
+      const result = await verifyPaths(pathsToCheck, tempDir);
+      expect(result).toEqual([]);
+    });
+
+    it('should return an empty array for empty input', async () => {
+      const result = await verifyPaths([], tempDir);
+      expect(result).toEqual([]);
+    });
+  });
+});
+````
+
 ## File: test/unit/core.fixtures.yaml
 ````yaml
 - name: "Basic path extraction"
@@ -1289,132 +1428,6 @@ describe('cli.ts (E2E)', async () => {
     - "src/services/fs.service.ts"
 ````
 
-## File: test/unit/core.test.ts
-````typescript
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import path from 'node:path';
-import { extractPaths, verifyPaths, type Options, type Strategy } from '../../dist/core.js';
-import {
-  loadYamlFixture,
-  setupTestDirectory,
-  cleanupTestDirectory,
-} from '../test.utils';
-
-type ExtractPathsTestCase = {
-  name: string;
-  options: Options;
-  input: string;
-  files?: { [path: string]: string };
-  expected?: string[];
-  expected_by_strategy?: {
-    [S in Strategy]?: string[];
-  };
-};
-
-describe('core.ts', () => {
-  describe('extractPaths', async () => {
-    const fixtures = await loadYamlFixture<ExtractPathsTestCase[]>('unit/core.fixtures.yaml');
-
-    for (const { name, options, input, files, expected, expected_by_strategy } of fixtures) {
-      if (expected_by_strategy) {
-        describe(name, () => {
-          for (const [strategy, expectedOutput] of Object.entries(
-            expected_by_strategy,
-          )) {
-            if (!expectedOutput) continue;
-            it(`with strategy: ${strategy}`, async () => {
-              let tempDir: string | undefined;
-              let cwd = options.cwd || process.cwd();
-              if (files && Object.keys(files).length > 0) {
-                tempDir = await setupTestDirectory(files);
-                cwd = tempDir;
-              }
-
-              const result = await extractPaths(input, {
-                ...options,
-                cwd,
-                strategy: strategy as Strategy,
-              });
-              // Sort for stable comparison
-              expect(result.sort()).toEqual(expectedOutput.sort());
-
-              if (tempDir) {
-                await cleanupTestDirectory(tempDir);
-              }
-            });
-          }
-        });
-      } else {
-        it(name, async () => {
-          let tempDir: string | undefined;
-          let cwd = options.cwd || process.cwd();
-          if (files && Object.keys(files).length > 0) {
-            tempDir = await setupTestDirectory(files);
-            cwd = tempDir;
-          }
-
-          const result = await extractPaths(input, { ...options, cwd });
-          // Sort for stable comparison
-          expect(result.sort()).toEqual((expected ?? []).sort());
-
-          if (tempDir) {
-            await cleanupTestDirectory(tempDir);
-          }
-        });
-      }
-    }
-  });
-
-  describe('verifyPaths', () => {
-    let tempDir: string;
-    const testFiles = {
-      'file1.txt': 'hello',
-      'dir/file2.js': 'content',
-      'dir/subdir/file3.json': '{}',
-    };
-
-    beforeEach(async () => {
-      tempDir = await setupTestDirectory(testFiles);
-    });
-
-    afterEach(async () => {
-      await cleanupTestDirectory(tempDir);
-    });
-
-    it('should return only paths that exist on disk', async () => {
-      const pathsToCheck = [
-        path.join(tempDir, 'file1.txt'), // exists
-        path.join(tempDir, 'dir/file2.js'), // exists
-        path.join(tempDir, 'non-existent.txt'), // does not exist
-        path.join(tempDir, 'dir/subdir/another.json'), // does not exist
-      ];
-
-      const expected = [
-        path.join(tempDir, 'file1.txt'),
-        path.join(tempDir, 'dir/file2.js'),
-      ];
-
-      const result = await verifyPaths(pathsToCheck, tempDir);
-      expect(result.sort()).toEqual(expected.sort());
-    });
-
-    it('should return an empty array if no paths exist', async () => {
-      const pathsToCheck = [
-        path.join(tempDir, 'foo.txt'),
-        path.join(tempDir, 'bar.js'),
-      ];
-      const result = await verifyPaths(pathsToCheck, tempDir);
-      expect(result).toEqual([]);
-    });
-
-    it('should return an empty array for empty input', async () => {
-      const result = await verifyPaths([], tempDir);
-      expect(result).toEqual([]);
-    });
-  });
-});
-````
-
 ## File: src/cli.ts
 ````typescript
 #!/usr/bin/env node
@@ -1550,6 +1563,47 @@ run().catch(err => {
   process.stderr.write(`Error: ${errorMessage}\n`);
   process.exit(1);
 });
+````
+
+## File: package.json
+````json
+{
+  "name": "pathfish",
+  "version": "0.1.9",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "pathfish": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "clipboardy": "^4.0.0",
+    "js-yaml": "^4.1.0",
+    "mri": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/js-yaml": "^4.0.9",
+    "@types/mri": "^1.1.5",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
+    "eslint": "^9.36.0",
+    "tsup": "^8.5.0"
+  },
+  "scripts": {
+    "dist-test": "tsup && bun test test",
+    "build": "tsup",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
 ````
 
 ## File: src/core.ts
@@ -1704,15 +1758,32 @@ async function extractPathsWithFuzzy(text: string, cwd: string): Promise<string[
 
   // Pass 2: Handle ambiguous basename-only matches.
   for (const [basename, paths] of basenameToPaths.entries()) {
-    const basenameRegex = new RegExp(
-      `\\b${basename.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`,
-    );
-
-    if (!text.match(basenameRegex)) continue;
     const hasExistingMatch = paths.some(p => foundPaths.has(p));
     if (hasExistingMatch) continue;
 
-    paths.forEach(p => foundPaths.add(p));
+    const basenameRegex = new RegExp(
+      `\\b${basename.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`,
+      'g',
+    );
+
+    let match;
+    let hasStandaloneMatch = false;
+    while ((match = basenameRegex.exec(text)) !== null) {
+      if (match.index > 0) {
+        const charBefore = text[match.index - 1];
+        // Avoid matching a basename that is part of a larger filename
+        // e.g. matching 'types.ts' inside 'domain.types.ts'
+        if (/[\w.-]/.test(charBefore)) {
+          continue;
+        }
+      }
+      hasStandaloneMatch = true;
+      break; // One standalone match is enough to trigger
+    }
+
+    if (hasStandaloneMatch) {
+      paths.forEach(p => foundPaths.add(p));
+    }
   }
   return Array.from(foundPaths);
 }
@@ -1789,7 +1860,9 @@ function extractPathsWithRegex(text: string): string[] {
     pathStr = pathStr.replace(/^https?:\/\/[^\/]+/, '');
 
     // Remove domain prefix if this looks like a URL path without scheme
-    if (pathStr.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//)) {
+    // Only remove if it starts with common TLDs that suggest it's a domain
+    const commonTlds = /\.(com|org|net|edu|gov|mil|io|co|ai|dev|app|xyz)\//;
+    if (pathStr.match(commonTlds)) {
       pathStr = pathStr.replace(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\//, '/');
     }
 
@@ -1954,46 +2027,5 @@ export async function verifyPaths(paths: string[], cwd: string = process.cwd()):
   const existingPaths = paths.filter((_, i) => existenceChecks[i]);
 
   return existingPaths;
-}
-````
-
-## File: package.json
-````json
-{
-  "name": "pathfish",
-  "version": "0.1.8",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "type": "module",
-  "bin": {
-    "pathfish": "dist/cli.js"
-  },
-  "files": [
-    "dist"
-  ],
-  "dependencies": {
-    "clipboardy": "^4.0.0",
-    "js-yaml": "^4.1.0",
-    "mri": "^1.2.0"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "@types/js-yaml": "^4.0.9",
-    "@types/mri": "^1.1.5",
-    "@typescript-eslint/eslint-plugin": "^8.44.1",
-    "@typescript-eslint/parser": "^8.44.1",
-    "eslint": "^9.36.0",
-    "tsup": "^8.5.0"
-  },
-  "scripts": {
-    "dist-test": "tsup && bun test test",
-    "build": "tsup",
-    "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "bun run build"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
 }
 ````

@@ -96,3 +96,16 @@
   expected: |
     src/core/db.ts
     packages/konro/src/db.ts
+
+- name: "Fuzzy strategy should not match basename if it is part of a longer filename"
+  options: { format: 'list', verify: false, strategy: 'fuzzy' }
+  input: |
+    - src/types/config.types.ts
+    - src/types/domain.types.ts
+  files:
+    'src/types/config.types.ts': 'content'
+    'src/types/domain.types.ts': 'content'
+    'other/location/types.ts': 'content'
+  expected: |
+    src/types/config.types.ts
+    src/types/domain.types.ts
